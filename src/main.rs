@@ -5,6 +5,7 @@ use std::{
 use regex::Regex;
 
 use thirtyfour::prelude::*;
+use tokio::time::{sleep, Duration};
 
 #[tokio::main]
 async fn main() -> WebDriverResult<()> {
@@ -67,10 +68,17 @@ impl DriverProcess {
             .spawn()
             .expect("Failed to start driver");
 
-        // read output
+        // delay parse
+        let delay = sleep(Duration::from_secs(2));
+        futures_executor::block_on(delay);
+
         let mut output_string = String::new();
+
+        // read output
         if let Some(ref mut stdout) = child.stdout {
-            stdout.read_to_string(&mut output_string).expect("Failed to read stdout");
+            let mut buffer = [0; 512];
+            let bytes_read = stdout.read(&mut buffer).unwrap_or(0);
+            output_string.push_str(std::str::from_utf8(&buffer[0..bytes_read]).unwrap_or_default());
         }
 
         // parse port with regex
