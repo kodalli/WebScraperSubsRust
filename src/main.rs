@@ -1,11 +1,9 @@
 use std::{
     panic,
-    process::{Child, Command, Stdio}, io::Read,
+    process::{Child, Command},
 };
-use regex::Regex;
 
 use thirtyfour::prelude::*;
-use tokio::time::{sleep, Duration};
 
 #[tokio::main]
 async fn main() -> WebDriverResult<()> {
@@ -29,64 +27,65 @@ async fn main() -> WebDriverResult<()> {
 }
 
 async fn transmission() -> WebDriverResult<()> {
-    let driver_process = DriverProcess::new("geckodriver");
+    let driver_process = DriverProcess::new("geckodriver", 4444);
     let port = driver_process.port();
 
     println!("Starting WebDriver");
 
     // Webscraper
-    let caps = DesiredCapabilities::firefox();
+    let mut caps = DesiredCapabilities::firefox();
+    caps.set_headless().expect("Failed to set browser to headless mode");
     let driver = WebDriver::new(&format!("http://localhost:{}", port), caps)
         .await
         .expect("Failed to create WebDriver");
+
+    // Transmission
     let transmission_url = "http://192.168.86.71:9091/transmission/web/";
     driver
         .goto(transmission_url)
         .await
         .expect("Failed to navigate to URL");
+
     println!("Reached Transmission!");
 
-    // close browser
+    let open_xp = "//*[@id=\"toolbar-open\"]";
+    //let torrent_upload_url_xp = "//*[@id=\"torrent_upload_url\"]";
+    //let save_location_xp = "//*[@id=\"add-dialog-folder-input\"]";
+    //let upload_xp = "//[@id=\"upload_confirm_button\"]";
+
+    let upload_elem = driver.find(By::XPath(open_xp)).await.expect("Failed to find open button");
+    upload_elem.click().await.expect("Failed to click open button");
+
+    println!("Clicked Open Button!");
+
+    // Close Browser
     driver.quit().await.expect("Failed to quit WebDriver");
+
+    println!("Closed WebDriver");
 
     Ok(())
 }
 
 // RAII (Resource Acquisition Is Initialized)
 // When this struct is dropped, the child process is terminated
-
 struct DriverProcess {
     child: Option<Child>,
     port: u16,
 }
 
 impl DriverProcess {
-    fn new(command: &str) -> Self {
+    fn new(command: &str, desired_port: u16) -> Self {
         // geckodriver chooses a random port :(
-        let mut child = Command::new(command)
-            .stdout(Stdio::piped())
+        let child = Command::new(command)
+            .arg("-p")
+            .arg(desired_port.to_string())
             .spawn()
             .expect("Failed to start driver");
 
-        // delay parse
-        let delay = sleep(Duration::from_secs(2));
-        futures_executor::block_on(delay);
-
-        let mut output_string = String::new();
-
-        // read output
-        if let Some(ref mut stdout) = child.stdout {
-            let mut buffer = [0; 512];
-            let bytes_read = stdout.read(&mut buffer).unwrap_or(0);
-            output_string.push_str(std::str::from_utf8(&buffer[0..bytes_read]).unwrap_or_default());
+        DriverProcess {
+            child: Some(child),
+            port: desired_port,
         }
-
-        // parse port with regex
-        let re = Regex::new(r"Listening on port (\d+)").unwrap();
-        let cap = re.captures(&output_string).expect("Failed to find port in output");
-        let port: u16 = cap[1].parse().expect("Failed to parse port");
-
-        DriverProcess { child: Some(child), port }
     }
 
     pub fn port(&self) -> u16 {
@@ -102,4 +101,3 @@ impl Drop for DriverProcess {
         }
     }
 }
-

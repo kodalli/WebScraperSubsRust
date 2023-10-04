@@ -1195,8 +1195,6 @@ dependencies = [
 name = "web_scraper_subs_rust"
 version = "0.1.0"
 dependencies = [
- "futures-executor",
- "regex",
  "thirtyfour",
  "tokio",
 ]
