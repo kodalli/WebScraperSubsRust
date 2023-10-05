@@ -7,39 +7,133 @@ use thirtyfour::prelude::*;
 
 #[tokio::main]
 async fn main() -> WebDriverResult<()> {
+
+    // Prompt user input
+    let mut sp_title = String::new();
+    println!("Enter the subsplease title: ");
+    std::io::stdin().read_line(&mut sp_title);
+    sp_title = sp_title.replace("–", "-");
+
+    let mut season_str = String::new();
+    println!("Enter the season: ");
+    std::io::stdin().read_line(&mut season_str);
+    let season_number = season_str.parse::<u8>().unwrap();
+
+    let mut batch_str = String::new();
+    println!("Enter 1 or 0 for batch download: ");
+    std::io::stdin().read_line(&mut batch_str);
+    let batch = season_str.parse::<bool>().unwrap();
+
     // This needs a running web driver like chromedriver or geckodriver
 
-    let result = panic::catch_unwind(transmission);
+    let magnet_links = panic::catch_unwind(|| async {
+        get_magnet_links_from_subsplease(&sp_title, batch).await;
+    });
 
-    match result {
-        Ok(future_result) => {
-            let web_driver_result = future_result.await;
-            if let Err(e) = web_driver_result {
-                eprintln!("Error in WebDriver logic: {:?}", e);
+    match magnet_links {
+        Ok(links) => {
+            for link in links {
+                let result = panic::catch_unwind(|| async {
+                    upload_to_transmission(link, &sp_title, season_number).await
+                });
+
+                match result {
+                    Ok(future_result) => {
+                        let web_driver_result = future_result.await;
+                        if let Err(e) = web_driver_result {
+                            eprintln!("Error in WebDriver logic: {:?}", e);
+                        }
+                    }
+                    Err(panic_info) => {
+                        eprintln!("Program panicked: {:?}", panic_info);
+                    }
+                }
             }
-        }
-        Err(panic_info) => {
-            eprintln!("Program panicked: {:?}", panic_info);
-        }
+        },
+        Err(err) => eprintln!("Failed to get magnet links"),
     }
+
+
+
+
 
     Ok(())
 }
 
-async fn transmission() -> WebDriverResult<()> {
+async fn get_magnet_links_from_subsplease(sp_title: &str, batch_if_available: bool) -> WebDriverResult<Vec<String>> {
     let driver_process = DriverProcess::new("geckodriver", 4444);
     let port = driver_process.port();
 
     println!("Starting WebDriver");
 
-    // Webscraper
+    // WebDriver
     let mut caps = DesiredCapabilities::firefox();
     caps.set_headless().expect("Failed to set browser to headless mode");
     let driver = WebDriver::new(&format!("http://localhost:{}", port), caps)
         .await
         .expect("Failed to create WebDriver");
 
-    // Transmission
+    let subsplease_url = "https://subsplease.org/shows/";
+
+    driver
+        .goto(subsplease_url)
+        .await
+        .expect("Failed to navigate to URL");
+
+    println!("Reached SubsPlease!");
+
+    let anime_xp = &format!("//a[text()=\"{}\"]", sp_title);
+    let anime_elem = driver.find(By::XPath(anime_xp)).await.expect("Failed to find anime link");
+    let anime_link = anime_elem.attr("href").await.expect("Failed to find href attribute").expect("Failed to find anime link");
+
+    driver
+        .goto(anime_link)
+        .await
+        .expect("Failed to navigate to Anime link");
+
+    let batch_xp = "//h2[contains(text(), 'Batch')]";
+    let batch_elem = driver.find(By::XPath(batch_xp)).await;
+
+    let magnet_xp = "//a[contains(@href,'1080p')]/span[text()='Magnet']/..";
+    let magnet_elems = driver.find_all(By::XPath(magnet_xp)).await;
+
+    let mut magnet_links: Vec<String> = Vec::new();
+    match magnet_elems {
+       Ok(mag_elems) => {
+            if batch_if_available && batch_elem.is_ok() {
+                let mag_link = mag_elems.get(0).unwrap().attr("href").await;
+                if mag_link.is_ok() {
+                    magnet_links.push(mag_link.unwrap().unwrap());
+                }
+            } else {
+                for mag_elem in mag_elems {
+                    let mag_link = mag_elem.attr("href").await;
+                    if mag_link.is_ok() {
+                        magnet_links.push(mag_link.unwrap().unwrap());
+                    }
+                }
+            }
+       },
+       Err(err) => {
+           eprintln!("Could not find magnet links: {:?}", err);
+       }
+    }
+    return Ok(magnet_links)
+}
+
+async fn upload_to_transmission(link: &str, show_name: &str, season_number: u8) -> WebDriverResult<()> {
+    let driver_process = DriverProcess::new("geckodriver", 4444);
+    let port = driver_process.port();
+
+    println!("Starting WebDriver");
+
+    // WebDriver
+    let mut caps = DesiredCapabilities::firefox();
+    caps.set_headless().expect("Failed to set browser to headless mode");
+    let driver = WebDriver::new(&format!("http://localhost:{}", port), caps)
+        .await
+        .expect("Failed to create WebDriver");
+
     let transmission_url = "http://192.168.86.71:9091/transmission/web/";
     driver
         .goto(transmission_url)
@@ -49,14 +143,27 @@ async fn transmission() -> WebDriverResult<()> {
     println!("Reached Transmission!");
 
     let open_xp = "//*[@id=\"toolbar-open\"]";
-    //let torrent_upload_url_xp = "//*[@id=\"torrent_upload_url\"]";
-    //let save_location_xp = "//*[@id=\"add-dialog-folder-input\"]";
-    //let upload_xp = "//[@id=\"upload_confirm_button\"]";
+    let torrent_upload_url_xp = "//*[@id=\"torrent_upload_url\"]";
+    let save_location_xp = "//*[@id=\"add-dialog-folder-input\"]";
+    let upload_xp = "//[@id=\"upload_confirm_button\"]";
 
     let upload_elem = driver.find(By::XPath(open_xp)).await.expect("Failed to find open button");
     upload_elem.click().await.expect("Failed to click open button");
 
     println!("Clicked Open Button!");
+
+    let url_elem = driver.find(By::XPath(torrent_upload_url_xp)).await.expect("Failed to find url element");
+    url_elem.clear().await.expect("Failed to clear url element");
+    url_elem.send_keys(link).await.expect("Failed to update url element");
+
+    let destination_elem = driver.find(By::XPath(save_location_xp)).await.expect("Failed to find folder element");
+    destination_elem.clear().await.expect("Failed to clear folder element");
+    destination_elem.send_keys(&format!("/data/Anime/{}/Season {}/", show_name, season_number)).await.expect("Failed to update folder element");
+
+    let upload_button = driver.find(By::XPath(upload_xp)).await.expect("Failed to find upload button");
+    upload_button.click().await.expect("Failed to click upload button");
+
+    println!("Queued torrent for {}", show_name);
 
     // Close Browser
     driver.quit().await.expect("Failed to quit WebDriver");
