@@ -17,3 +17,21 @@ chmod +x geckodriver
 ```
 sudo mv geckodriver /usr/local/bin/
 ```
+
+### Transmission RPC
+- Ping Transmission
+```
+ping <transmission_address>
+```
+- Check Transmission RPC API with curl, get session id
+```
+curl -i http://<transmission_address>:9091/transmission/rpc
+```
+- Add a Torrent with a Magnet Link
+```
+curl -i -H "X-Transmission-Session-Id: YOUR_SESSION_ID" \
+     -H "Content-Type: application/json" \
+     -X POST -d '{"method":"torrent-add","arguments":{"filename":"YOUR_MAGNET_LINK"}}' \
+     http://<transmission_address>:9091/transmission/rpc
+```
+

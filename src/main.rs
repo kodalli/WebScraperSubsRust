@@ -11,30 +11,28 @@ async fn main() -> WebDriverResult<()> {
     // Prompt user input
     let mut sp_title = String::new();
     println!("Enter the subsplease title: ");
-    std::io::stdin().read_line(&mut sp_title);
-    sp_title = sp_title.replace("–", "-");
+    std::io::stdin().read_line(&mut sp_title).expect("Could not read arg");
+    sp_title = sp_title.replace("–", "-").trim().to_string();
 
     let mut season_str = String::new();
     println!("Enter the season: ");
-    std::io::stdin().read_line(&mut season_str);
-    let season_number = season_str.parse::<u8>().unwrap();
+    std::io::stdin().read_line(&mut season_str).expect("Could not read arg");
+    let season_number = season_str.trim().parse::<u8>().unwrap();
 
     let mut batch_str = String::new();
-    println!("Enter 1 or 0 for batch download: ");
-    std::io::stdin().read_line(&mut batch_str);
-    let batch = season_str.parse::<bool>().unwrap();
+    println!("Enter true or false for batch download: ");
+    std::io::stdin().read_line(&mut batch_str).expect("Could not read arg");
+    let batch = batch_str.trim().parse::<bool>().unwrap();
 
     // This needs a running web driver like chromedriver or geckodriver
 
-    let magnet_links = panic::catch_unwind(|| async {
-        get_magnet_links_from_subsplease(&sp_title, batch).await;
-    });
+    let magnet_links = get_magnet_links_from_subsplease(&sp_title, batch).await;
 
     match magnet_links {
         Ok(links) => {
             for link in links {
                 let result = panic::catch_unwind(|| async {
-                    upload_to_transmission(link, &sp_title, season_number).await
+                    upload_to_transmission(&link, &sp_title, season_number).await
                 });
 
                 match result {
@@ -50,12 +48,8 @@ async fn main() -> WebDriverResult<()> {
                 }
             }
         },
-        Err(err) => eprintln!("Failed to get magnet links"),
+        Err(err) => eprintln!("Failed to get magnet links {:?}", err),
     }
-
-
-
-
 
     Ok(())
 }
@@ -80,7 +74,7 @@ async fn get_magnet_links_from_subsplease(sp_title: &str, batch_if_available: bo
         .await
         .expect("Failed to navigate to URL");
 
-    println!("Reached SubsPlease!");
+    println!("Reached SubsPlease");
 
     let anime_xp = &format!("//a[text()=\"{}\"]", sp_title);
     let anime_elem = driver.find(By::XPath(anime_xp)).await.expect("Failed to find anime link");
@@ -90,6 +84,8 @@ async fn get_magnet_links_from_subsplease(sp_title: &str, batch_if_available: bo
         .goto(anime_link)
         .await
         .expect("Failed to navigate to Anime link");
+
+    println!("Reached Anime Show Page");
 
     let batch_xp = "//h2[contains(text(), 'Batch')]";
     let batch_elem = driver.find(By::XPath(batch_xp)).await;
@@ -113,6 +109,7 @@ async fn get_magnet_links_from_subsplease(sp_title: &str, batch_if_available: bo
                     }
                 }
             }
+            println!("Retrieved Magent Links");
        },
        Err(err) => {
            eprintln!("Could not find magnet links: {:?}", err);
@@ -145,7 +142,7 @@ async fn upload_to_transmission(link: &str, show_name: &str, season_number: u8) 
     let open_xp = "//*[@id=\"toolbar-open\"]";
     let torrent_upload_url_xp = "//*[@id=\"torrent_upload_url\"]";
     let save_location_xp = "//*[@id=\"add-dialog-folder-input\"]";
-    let upload_xp = "//[@id=\"upload_confirm_button\"]";
+    let upload_xp = "//*[@id=\"upload_confirm_button\"]";
 
     let upload_elem = driver.find(By::XPath(open_xp)).await.expect("Failed to find open button");
     upload_elem.click().await.expect("Failed to click open button");
