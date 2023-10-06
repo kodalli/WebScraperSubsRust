@@ -5,16 +5,40 @@ mod transmission;
 use anyhow::{Ok, Result};
 use subsplease::get_magnet_links_from_subsplease;
 use transmission::upload_to_transmission_rpc;
+use actix_web::{web, App, HttpServer, Responder, HttpResponse};
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Prompt user input
-    let (sp_title, season_number, batch) = get_user_input();
-    // This needs a running web driver like chromedriver or geckodriver
-    let magnet_links = get_magnet_links_from_subsplease(&sp_title, batch, 4444).await?;
-    let _result = upload_to_transmission_rpc(magnet_links, &sp_title, season_number).await?;
+//#[tokio::main]
+//async fn main() -> Result<()> {
+//    // Prompt user input
+//    let (sp_title, season_number, batch) = get_user_input();
+//    // This needs a running web driver like chromedriver or geckodriver
+//    let magnet_links = get_magnet_links_from_subsplease(&sp_title, batch, 4444).await?;
+//    let _result = upload_to_transmission_rpc(magnet_links, &sp_title, season_number).await?;
+//
+//    Ok(())
+//}
 
-    Ok(())
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    HttpServer::new(|| {
+        App::new()
+            .service(fs::Files::new("/static", "static/"))
+            .route("/", web::get().to(index))
+            .route("/submit", web::post().to(submit_form))
+    })
+    .bind("127.0.0.1:8080")?
+    .run()
+    .await
+}
+
+async fn index() -> impl Responder {
+    HttpResponse::Ok().body(include_str!("../templates/index.html"))
+}
+
+async fn submit_form(form: web::Form<std::collections::HashMap<String, String>>) -> impl Responder {
+    let unk = &"Unknown".to_string();
+    let name = form.get("name").unwrap_or(unk);
+    format!("Hello {}", name)
 }
 
 fn get_user_input() -> (String, u8, bool) {
