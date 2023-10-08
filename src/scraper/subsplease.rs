@@ -1,4 +1,4 @@
-use crate::raii_process_driver::DriverProcess;
+use crate::scraper::raii_process_driver::DriverProcess;
 use anyhow::{Ok, Result};
 use std::collections::VecDeque;
 use thirtyfour::{By, DesiredCapabilities, WebDriver};

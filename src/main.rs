@@ -1,11 +1,77 @@
-mod raii_process_driver;
-mod subsplease;
-mod transmission;
+mod pages;
+mod scraper;
 
-use anyhow::{Ok, Result};
-use subsplease::get_magnet_links_from_subsplease;
-use transmission::upload_to_transmission_rpc;
-use actix_web::{web, App, HttpServer, Responder, HttpResponse};
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+use anyhow::{self, Context};
+use axum::{routing::{get, post}, Router};
+use scraper::subsplease::get_magnet_links_from_subsplease;
+use scraper::transmission::upload_to_transmission_rpc;
+use tower_http::services::ServeDir;
+use tracing::info;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use pages::home::{UserState, view, update_user};
+use pages::fortune::fortune;
+
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "axum_static_web_werver=debug".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    info!("initializing router and assets");
+
+    // Use port env if available
+    let port = std::env::var("PORT").unwrap_or_else(|_| "42069".to_string());
+    let port = port
+        .parse()
+        .context("PORT environment variable is not a vlid u16")?;
+
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+
+    eprintln!("Listening on http://{}", addr);
+    info!("router initalized, now listening on port {}", port);
+
+    let state = AppState {
+        user: Arc::new(Mutex::new(UserState::new("Yeehaw".to_string()))),
+    };
+
+    axum::Server::bind(&addr)
+        .serve(router(state)?.into_make_service())
+        .await
+        .context("error while starting server")?;
+
+    Ok(())
+}
+
+struct AppState {
+    user: Arc<Mutex<UserState>>,
+}
+
+fn api_router(state: AppState) -> Router {
+    Router::new().route("/login", post(update_user).with_state(state.user))
+        .route("/fortune", get(fortune))
+}
+
+fn router(state: AppState) -> anyhow::Result<Router> {
+    let assets_path = std::env::current_dir()?;
+    let assets_serve_dir = ServeDir::new(format!(
+        "{}/assets",
+        assets_path.to_str().expect("assets path is not valid utf8")
+    ));
+
+    Ok(Router::new()
+        .route("/", get(view).with_state(state.user.clone()))
+        .nest("/api", api_router(AppState { user: state.user.clone() }))
+        .nest_service("/assets", assets_serve_dir))
+}
+
 
 //#[tokio::main]
 //async fn main() -> Result<()> {
@@ -17,54 +83,31 @@ use actix_web::{web, App, HttpServer, Responder, HttpResponse};
 //
 //    Ok(())
 //}
-
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    HttpServer::new(|| {
-        App::new()
-            .service(fs::Files::new("/static", "static/"))
-            .route("/", web::get().to(index))
-            .route("/submit", web::post().to(submit_form))
-    })
-    .bind("127.0.0.1:8080")?
-    .run()
-    .await
-}
-
-async fn index() -> impl Responder {
-    HttpResponse::Ok().body(include_str!("../templates/index.html"))
-}
-
-async fn submit_form(form: web::Form<std::collections::HashMap<String, String>>) -> impl Responder {
-    let unk = &"Unknown".to_string();
-    let name = form.get("name").unwrap_or(unk);
-    format!("Hello {}", name)
-}
-
-fn get_user_input() -> (String, u8, bool) {
-    let mut sp_title = String::new();
-    println!("Enter the subsplease title: ");
-    std::io::stdin()
-        .read_line(&mut sp_title)
-        .expect("Could not read arg");
-    sp_title = sp_title.replace("–", "-").trim().to_string();
-
-    let mut season_str = String::new();
-    println!("Enter the season: ");
-    std::io::stdin()
-        .read_line(&mut season_str)
-        .expect("Could not read arg");
-    let season_number = season_str.trim().parse::<u8>().unwrap();
-
-    let mut batch_str = String::new();
-    println!("Enter true or false for batch download: ");
-    std::io::stdin()
-        .read_line(&mut batch_str)
-        .expect("Could not read arg");
-    let batch = batch_str.trim().parse::<bool>().unwrap();
-
-    (sp_title, season_number, batch)
-}
+//
+//fn get_user_input() -> (String, u8, bool) {
+//    let mut sp_title = String::new();
+//    println!("Enter the subsplease title: ");
+//    std::io::stdin()
+//        .read_line(&mut sp_title)
+//        .expect("Could not read arg");
+//    sp_title = sp_title.replace("–", "-").trim().to_string();
+//
+//    let mut season_str = String::new();
+//    println!("Enter the season: ");
+//    std::io::stdin()
+//        .read_line(&mut season_str)
+//        .expect("Could not read arg");
+//    let season_number = season_str.trim().parse::<u8>().unwrap();
+//
+//    let mut batch_str = String::new();
+//    println!("Enter true or false for batch download: ");
+//    std::io::stdin()
+//        .read_line(&mut batch_str)
+//        .expect("Could not read arg");
+//    let batch = batch_str.trim().parse::<bool>().unwrap();
+//
+//    (sp_title, season_number, batch)
+//}
 
 #[cfg(test)]
 mod test {
