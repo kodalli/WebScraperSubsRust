@@ -1,7 +1,15 @@
 use crate::scraper::raii_process_driver::DriverProcess;
 use anyhow::{Ok, Result};
-use std::collections::VecDeque;
+use std::{collections::VecDeque, sync::Arc};
 use thirtyfour::{By, DesiredCapabilities, WebDriver};
+
+pub struct Show {
+    title: Arc<str>,
+    episode_numbers: Arc<[Arc<str>]>,
+    magnet_links: Arc<[Arc<str>]>,
+    batch_link: Option<Arc<str>>,
+    poster_image: Option<Arc<[u8]>>,
+}
 
 pub async fn get_magnet_links_from_subsplease(
     sp_title: &str,

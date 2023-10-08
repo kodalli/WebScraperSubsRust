@@ -2,22 +2,32 @@
   <div class="px-6 py-24 sm:px-6 sm:py-32 lg:px-8">
     <div class="mx-auto max-w-2xl text-center">
       <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
-        Bing Chilling ❤️ &lt;htmx /&gt;
+        Bing Chilling  I ❤️ Cock
       </h1>
       <p class="mx-auto mt-6 max-w-xl text-lg leading-8 text-gray-600">
-        A simple example of using htmx based app in axum.
+        Sugma my nuts cunt.
       </p>
       <div class="mt-10 flex-col space-y-12">
+
+        <form hx-post="/api/login" hx-trigger="submit" hx-target="#login">
+            <label for="user">Username:</label>
+            <input type="text" id="user" name="user">
+            <button type="submit" class="rounded-md bg-black px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-white hover:text-black hover:ring-2 hover:ring-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black">Login</button>
+
+        </form>
+
         <button
           hx-post="/api/login"
           hx-trigger="click"
           hx-target="#login"
+          hx-swap="outerHTML"
+          hx-body='{"user": document.querySelector("#login").textContent}'
           class="rounded-md bg-black px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-white hover:text-black hover:ring-2 hover:ring-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
         >
           Login
         </button>
 
-        <div id="login">{{ user }}</div>
+        <div name="user" id="login">{{ user }}</div>
 
         <button
           hx-get="/api/fortune"

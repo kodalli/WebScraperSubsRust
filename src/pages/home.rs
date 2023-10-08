@@ -2,7 +2,7 @@ use crate::pages::HtmlTemplate;
 use askama::Template;
 use axum::{
     extract::State,
-    response::{Html, IntoResponse}, Json,
+    response::{Html, IntoResponse}, Form,
 };
 use serde::Deserialize;
 use std::sync::Arc;
@@ -33,9 +33,10 @@ pub async fn view(State(state): State<Arc<Mutex<UserState>>>) -> impl IntoRespon
     HtmlTemplate::new(template)
 }
 
+#[axum::debug_handler]
 pub async fn update_user(
     State(state): State<Arc<Mutex<UserState>>>,
-    Json(payload): Json<UserState>,
+    Form(payload): Form<UserState>,
 ) -> impl IntoResponse {
     // Lock the mutex to get mutable access
     let mut lock = state.lock().await;

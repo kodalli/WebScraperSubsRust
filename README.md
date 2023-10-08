@@ -61,6 +61,18 @@ cargo make run
 ```
 > This wil run a daemon that will rebuild the project when the source code is changed.
 
+## Subsplease
+
+### Xpaths
+
+- Source image
+```shell
+"//img[contains(@class, 'img-responsive')][contains(@class, 'img-center')]"
+```
+- Episode title
+```
+"//label[contains(@class, 'episode-title')]"
+```
 
 
 
