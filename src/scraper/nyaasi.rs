@@ -38,7 +38,7 @@ pub async fn get_torrents_from_nyaa(
     Ok(text)
 }
 
-pub async fn parse_nyaa(request_text: String) -> anyhow::Result<Vec<Torrent>> {
+pub fn parse_nyaa(request_text: String) -> Vec<Torrent> {
     // div/table/tbody/tr
     // td/a href -> view/id, title -> 1080p, separate (title, episode)
     // td/a href, class -> comments ignore
@@ -72,8 +72,6 @@ pub async fn parse_nyaa(request_text: String) -> anyhow::Result<Vec<Torrent>> {
             if let Some(magnet) = tr.select(&selector_magnet).next() {
                 magnet_link = magnet.value().attr("href").map(|s| s.to_string());
             }
-            println!("Title: {:?}", title);
-            println!("View: {:?}", view_link);
             torrents.push(Torrent {
                 title,
                 view: view_link,
@@ -83,21 +81,33 @@ pub async fn parse_nyaa(request_text: String) -> anyhow::Result<Vec<Torrent>> {
         }
     }
 
-    Ok(torrents)
+    return torrents;
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
 
+    #[ignore]
     #[tokio::test]
-    async fn test_nyaa() {
+    async fn test_nyaa_subsplease() {
         let keyword = "One Piece";
         let user = Some("subsplease");
         let request_text =
             get_torrents_from_nyaa(keyword, user, None, None, None, None, None, None).await;
         assert!(request_text.is_ok());
-        let parsed = parse_nyaa(request_text.unwrap()).await;
-        assert!(parsed.is_ok());
+        let parsed = parse_nyaa(request_text.unwrap());
+        assert!(parsed.len() > 0);
+    }
+
+    #[tokio::test]
+    async fn test_nyaa_erai_raws() {
+        let keyword = "One Piece";
+        let user = Some("Erai-raws");
+        let request_text =
+            get_torrents_from_nyaa(keyword, user, Some(2), None, None, None, None, None).await;
+        assert!(request_text.is_ok());
+        let parsed = parse_nyaa(request_text.unwrap());
+        assert!(parsed.len() > 0);
     }
 }

@@ -2315,6 +2315,7 @@ dependencies = [
  "reqwest",
  "scraper",
  "serde",
+ "serde_json",
  "thirtyfour",
  "tokio",
  "tower",
