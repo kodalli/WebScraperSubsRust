@@ -74,5 +74,14 @@ cargo make run
 "//label[contains(@class, 'episode-title')]"
 ```
 
+## Nyaa.si
+
+### Make direct requests with arguments
+```shell
+"{}/{}?f={}&c={}_{}&q={}&p={}&s={}&o={}".format(
+                url, user_uri, filters, category, subcategory, keyword,
+                page, sorting, order)
+```
+
 
 
