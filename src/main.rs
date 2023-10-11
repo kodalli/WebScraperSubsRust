@@ -11,7 +11,7 @@ use scraper::transmission::upload_to_transmission_rpc;
 use tower_http::services::ServeDir;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use pages::home::{UserState, view, update_user};
+use pages::{home::{UserState, view, update_user}, anime::seasonal_anime};
 use pages::fortune::fortune;
 
 
@@ -57,6 +57,7 @@ struct AppState {
 fn api_router(state: AppState) -> Router {
     Router::new().route("/login", post(update_user).with_state(state.user))
         .route("/fortune", get(fortune))
+        .route("/anime", get(seasonal_anime))
 }
 
 fn router(state: AppState) -> anyhow::Result<Router> {
