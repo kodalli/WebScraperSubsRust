@@ -1,4 +1,5 @@
-use crate::pages::HtmlTemplate;
+use crate::{pages::HtmlTemplate, scraper::anilist::{get_anilist_data, Season, AniShow}};
+use anyhow::Ok;
 use askama::Template;
 use axum::{
     extract::State,
@@ -23,12 +24,26 @@ impl UserState {
 #[template(path = "pages/home.html")]
 pub struct HomeTemplate {
     pub user: String,
+    pub shows: Vec<AniShow>,
+}
+
+async fn get_seasonal() -> anyhow::Result<Vec<AniShow>> {
+    let res = match get_anilist_data(Season::FALL, 2023).await {
+        anyhow::Result::Ok(res) => res,
+        Err(err) => {
+            println!("Failed to fetch seasonal anime. Error: {}", err);
+            Vec::new()
+        },
+    };
+    let shows: Vec<AniShow> = res.to_owned();
+    Ok(shows)
 }
 
 pub async fn view(State(state): State<Arc<Mutex<UserState>>>) -> impl IntoResponse {
     let lock = state.lock().await;
     let template = HomeTemplate {
-        user: { lock.user.clone() }
+        user: { lock.user.clone() },
+        shows: get_seasonal().await.unwrap_or_default()
     };
     HtmlTemplate::new(template)
 }

@@ -33,6 +33,9 @@ query ($season: MediaSeason, $seasonYear: Int){
         english
         native
       }
+      description
+      episodes
+      duration
       averageScore
       meanScore
       popularity
@@ -41,6 +44,11 @@ query ($season: MediaSeason, $seasonYear: Int){
           medium
           large
           extraLarge
+      }
+      startDate {
+          year
+          month
+          day
       }
     }
 
@@ -59,7 +67,19 @@ pub struct AniShow {
     pub popularity: Option<u64>,
     pub genres: Option<Vec<String>>,
     #[serde(rename = "coverImage")]
-    pub cover_image: CoverImage,
+    pub cover_image: Option<CoverImage>,
+    pub description: Option<String>,
+    #[serde(rename = "startDate")]
+    pub start_date: Option<FuzzyDate>,
+    pub episodes: Option<u16>,
+    pub duration: Option<u16>,
+}
+
+#[derive(serde::Deserialize, Debug, Clone)]
+pub struct FuzzyDate {
+    year: Option<u16>,
+    month: Option<u8>,
+    day: Option<u8>,
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]

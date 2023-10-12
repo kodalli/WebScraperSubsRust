@@ -21,3 +21,6 @@ serde = { version = "1.0.188", features = ["derive"] }
 scraper = "0.17.1"
 serde_json = "1.0.107"
 
+[profile.dev.package.askama_derive]
+opt-level = 3
+

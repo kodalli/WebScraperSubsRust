@@ -1,47 +1,24 @@
-<div class="bg-white">
-  <div class="px-6 py-24 sm:px-6 sm:py-32 lg:px-8">
+<div class="bg-black">
+    <div class="py-24"> <!--class="px-6 py-24 sm:px-6 sm:py-32 lg:px-8"-->
     <div class="mx-auto max-w-2xl text-center">
-      <h1 class="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
-        Bing Chilling  I ❤️ Cock
+      <h1 class="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+        Kod Anime
       </h1>
-      <p class="mx-auto mt-6 max-w-xl text-lg leading-8 text-gray-600">
-        Sugma my nuts cunt.
+      <p class="mx-auto mt-6 max-w-xl text-lg leading-8 text-gray-200">
+        Anime Tiddies.
       </p>
       <div class="mt-10 flex-col space-y-12">
-
-        <form hx-post="/api/login" hx-trigger="submit" hx-target="#login">
-            <label for="user">Username:</label>
-            <input type="text" id="user" name="user">
-            <button type="submit" class="rounded-md bg-black px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-white hover:text-black hover:ring-2 hover:ring-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black">Login</button>
-
-        </form>
-
-        <button
-          hx-post="/api/login"
-          hx-trigger="click"
-          hx-target="#login"
-          hx-swap="outerHTML"
-          hx-body='{"user": document.querySelector("#login").textContent}'
-          class="rounded-md bg-black px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-white hover:text-black hover:ring-2 hover:ring-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
-        >
-          Login
-        </button>
-
-        <div name="user" id="login">{{ user }}</div>
-
-        <button type=""></button>
-
         <button
             hx-get="/api/anime"
           hx-trigger="click"
           hx-target="#anime"
           hx-indicator="#anime-spinner"
-          class="rounded-md bg-black px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-white hover:text-black hover:ring-2 hover:ring-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+          class="rounded-md bg-white px-3.5 py-2.5 text-sm font-semibold text-black shadow-sm transition-colors hover:bg-black hover:text-white hover:ring-2 hover:ring-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         >
           Get Anime
         </button>
 
-        <div id="anime" class="font-sans italic"></div>
+        <div id="anime" class="font-sans italic text-white"></div>
 
         <div id="anime-spinner" class="htmx-indicator mx-auto h-12 w-12">
           <svg
@@ -65,84 +42,17 @@
             ></path>
           </svg>
         </div>
+    </div>
 
-        <div class="flex flex-wrap flex--movie">
 
-          <div class="w-full md:w-full lg:w-1/2 max-w-4xl rounded overflow-hidden shadow-lg m-4 flex justify-between">
-            <div class="md:flex-shrink-0">
-              <img class="md:w-56"
-                   src="https://image.tmdb.org/t/p/w600_and_h900_bestv2/nAU74GmpUk7t5iklEp3bufwDq4n.jpg"
-                   alt="A Quiet Place movie poster" />
-            </div>
-            <div class="flex flex-col flex-grow px-8 py-4 bg-color-333">
-              <h3 class="font-bold text-4xl md:text-2xl lg:text-2xl text-gray-200 movie--title">A Quiet Place</h3>
-              <span class="movie--year text-xl lg:text-sm lg:mb-4">2019</span>
-              <div class="flex-grow">
-                <p class="text-xl md:text-base lg:text-base text-gray-100 leading-snug truncate-overflow">A family is forced to live in silence while hiding from creatures that hunt by sound.</p>
-              </div>
-              <div class="button-container flex justify-between mb-2">
-                <button class="text-lg mr-4 lg:text-sm text-gray-200">More Info</button>
-                <button class="text-lg lg:text-sm font-bold py-2 px-4 rounded bg-orange-200 text-orange-700">Add to List</button>
-              </div>
-            </div>
-          </div>
-          <div class="w-full md:w-full lg:w-1/2 max-w-4xl rounded overflow-hidden shadow-lg m-4 flex justify-between">
-            <div class="md:flex-shrink-0">
-              <img class="md:w-56"
-                   src="https://image.tmdb.org/t/p/w600_and_h900_bestv2/lNkDYKmrVem1J0aAfCnQlJOCKnT.jpg"
-                   alt="A Quiet Place movie poster" />
-            </div>
-            <div class="flex flex-col flex-grow px-8 py-4 bg-color-333">
-              <h3 class="font-bold text-4xl md:text-2xl lg:text-2xl text-gray-200 movie--title">Halloween</h3>
-              <span class="movie--year text-xl lg:text-sm lg:mb-4">2018</span>
-              <div class="flex-grow">
-                <p class="text-xl md:text-base lg:text-base text-gray-100 leading-snug truncate-overflow">Laurie Strode comes to her final confrontation with Michael Myers, the masked figure who has haunted her since she narrowly escaped his killing spree on Halloween night four decades ago.</p>
-              </div>
-              <div class="button-container flex justify-between mb-2">
-                <button class="text-lg mr-4 lg:text-sm text-gray-200">More Info</button>
-                <button class="text-lg lg:text-sm font-bold py-2 px-4 rounded bg-orange-200 text-orange-700">Add to List</button>
-              </div>
-            </div>
-          </div>
-          <div class="w-full md:w-full lg:w-1/2 max-w-4xl rounded overflow-hidden shadow-lg m-4 flex justify-between">
-            <div class="md:flex-shrink-0">
-              <img class="md:w-56"
-                   src="https://image.tmdb.org/t/p/w600_and_h900_bestv2/zHMw9xGrNlrDsuK6Lnx5NlL72Eu.jpg"
-                   alt="A Quiet Place movie poster" />
-            </div>
-            <div class="flex flex-col flex-grow px-8 py-4 bg-color-333">
-              <h3 class="font-bold text-4xl md:text-2xl lg:text-2xl text-gray-200 movie--title">Saw III</h3>
-              <span class="movie--year text-xl lg:text-sm lg:mb-4">2007</span>
-              <div class="flex-grow">
-                <p class="text-xl md:text-base lg:text-base text-gray-100 leading-snug truncate-overflow">Jigsaw has disappeared. Along with his new apprentice Amanda, the puppet-master behind the cruel, intricate games that have terrified a community and baffled police has once again eluded capture and vanished. While city detective scramble to locate him, Doctor Lynn Denlon and Jeff Reinhart are unaware that they are about to become the latest pawns on his vicious chessboard.</p>
-              </div>
-              <div class="button-container flex justify-between mb-2">
-                <button class="text-lg mr-4 lg:text-sm text-gray-200">More Info</button>
-                <button class="text-lg lg:text-sm font-bold py-2 px-4 rounded bg-orange-200 text-orange-700">Add to List</button>
-              </div>
-            </div>
-          </div>
-          <div class="w-full md:w-full lg:w-1/2 max-w-4xl rounded overflow-hidden shadow-lg m-4 flex justify-between">
-            <div class="md:flex-shrink-0">
-              <img class="md:w-56"
-                   src="https://image.tmdb.org/t/p/w600_and_h900_bestv2/wfLzocgEa7DDQAJWeorEiDFx9WM.jpg"
-                   alt="A Quiet Place movie poster" />
-            </div>
-            <div class="flex flex-col flex-grow px-8 py-4 bg-color-333">
-              <h3 class="font-bold text-4xl md:text-2xl lg:text-2xl text-gray-200 movie--title">Slaugherhouse Rulez</h3>
-              <span class="movie--year text-xl lg:text-sm lg:mb-4">2018</span>
-              <div class="flex-grow">
-                <p class="text-xl md:text-base lg:text-base text-gray-100 leading-snug truncate-overflow">Don Wallace, a student at the boarding school Slaughterhouse, faces the arcane rules of the establishment when a new threat emerges and the tenants of the school engage in a bloody battle for survival.</p>
-              </div>
-              <div class="button-container flex justify-between mb-2">
-                <button class="text-lg mr-4 lg:text-sm text-gray-200">More Info</button>
-                <button class="text-lg lg:text-sm font-bold py-2 px-4 rounded bg-orange-200 text-orange-700">Add to List</button>
-              </div>
-            </div>
-          </div>
-        </div>
 
-      </div>
+  </div>
+  <div class="container mx-auto pl-6">
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-x-[10px] gap-y-[30px]">
+        {% for show in shows %}
+            {% include "components/card.html" %}
+        {% end for %}
     </div>
   </div>
+
 </div>
