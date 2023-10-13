@@ -1,6 +1,7 @@
 use anyhow::{Context, Ok};
 use reqwest::Client;
 use serde_json::json;
+use serde::{Serialize, Deserialize, Deserializer, de};
 
 // Query to use in request
 //const QUERY: &str = "
@@ -56,7 +57,7 @@ query ($season: MediaSeason, $seasonYear: Int){
 }
 ";
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct AniShow {
     pub id: Option<u32>,
     pub title: Option<Title>,
@@ -75,21 +76,46 @@ pub struct AniShow {
     pub duration: Option<u16>,
 }
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct FuzzyDate {
-    year: Option<u16>,
-    month: Option<u8>,
-    day: Option<u8>,
+    pub year: Option<u16>,
+    #[serde(deserialize_with = "deserialize_month")]
+    pub month: Option<String>,
+    pub day: Option<u8>,
 }
 
-#[derive(serde::Deserialize, Debug, Clone)]
+fn deserialize_month<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let month_number = Option::<u8>::deserialize(deserializer)?;
+    let month_str = match month_number {
+        Some(1) => Some("Jan".to_string()),
+        Some(2) => Some("Feb".to_string()),
+        Some(3) => Some("Mar".to_string()),
+        Some(4) => Some("Apr".to_string()),
+        Some(5) => Some("May".to_string()),
+        Some(6) => Some("Jun".to_string()),
+        Some(7) => Some("Jul".to_string()),
+        Some(8) => Some("Aug".to_string()),
+        Some(9) => Some("Sep".to_string()),
+        Some(10) => Some("Oct".to_string()),
+        Some(11) => Some("Nov".to_string()),
+        Some(12) => Some("Dec".to_string()),
+        Some(_) => return Err(de::Error::custom("Invalid month")),
+        None => None,
+    };
+    Ok(month_str)
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct Title {
     pub romaji: Option<String>,
     pub english: Option<String>,
     pub native: Option<String>,
 }
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct CoverImage {
     pub medium: Option<String>,
     pub large: Option<String>,
@@ -97,23 +123,23 @@ pub struct CoverImage {
     pub extra_large: Option<String>,
 }
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 struct MediaPage {
     media: Vec<AniShow>,
 }
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 struct Data {
     #[serde(rename = "Page")]
     page: MediaPage,
 }
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(Deserialize, Debug)]
 struct Response {
     data: Data,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub enum Season {
     #[serde(rename = "SPRING")]
     SPRING,

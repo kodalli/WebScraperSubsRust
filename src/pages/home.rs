@@ -1,9 +1,13 @@
-use crate::{pages::HtmlTemplate, scraper::anilist::{get_anilist_data, Season, AniShow}};
+use crate::{
+    pages::HtmlTemplate,
+    scraper::anilist::{get_anilist_data, AniShow, Season},
+};
 use anyhow::Ok;
 use askama::Template;
 use axum::{
     extract::State,
-    response::{Html, IntoResponse}, Form,
+    response::{Html, IntoResponse},
+    Form,
 };
 use serde::Deserialize;
 use std::sync::Arc;
@@ -33,7 +37,7 @@ async fn get_seasonal() -> anyhow::Result<Vec<AniShow>> {
         Err(err) => {
             println!("Failed to fetch seasonal anime. Error: {}", err);
             Vec::new()
-        },
+        }
     };
     let shows: Vec<AniShow> = res.to_owned();
     Ok(shows)
@@ -41,9 +45,12 @@ async fn get_seasonal() -> anyhow::Result<Vec<AniShow>> {
 
 pub async fn view(State(state): State<Arc<Mutex<UserState>>>) -> impl IntoResponse {
     let lock = state.lock().await;
+    let cards: Vec<AniShow> = get_seasonal()
+        .await
+        .unwrap();
     let template = HomeTemplate {
         user: { lock.user.clone() },
-        shows: get_seasonal().await.unwrap_or_default()
+        shows: cards,
     };
     HtmlTemplate::new(template)
 }

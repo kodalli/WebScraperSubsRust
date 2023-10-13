@@ -19,7 +19,7 @@
 
         <!-- Date and Episode Info -->
         <div class="flex justify-between items-center">
-            <p class="text-sm">Jul 6, 2023</p>
+            <p class="text-sm">{{ show.start_date.as_ref().unwrap().month.unwrap()}}, {{ show.start_date.as_ref().unwrap().day.unwrap()}} {{ show.start_date.as_ref().unwrap().year.unwrap()}}</p>
             <p class="text-sm bg-green-500 px-2 py-1 rounded">23 eps, 23 min</p>
         </div>
 
