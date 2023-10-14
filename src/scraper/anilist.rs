@@ -1,28 +1,8 @@
-use anyhow::{Context, Ok};
-use reqwest::Client;
-use serde_json::json;
-use serde::{Serialize, Deserialize, Deserializer, de};
+use std::fmt;
 
-// Query to use in request
-//const QUERY: &str = "
-//query ($id: Int) { # Define which variables will be used in the query (id)
-//  Media (id: $id, type: ANIME) { # Insert our variables into the query arguments (id) (type: ANIME is hard-coded in the query)
-//    id
-//    title {
-//      romaji
-//      english
-//      native
-//    }
-//    bannerImage
-//    coverImage {
-//        medium
-//        large
-//        extraLarge
-//    }
-//  }
-//}
-//";
-// bannerImage - wide image
+use reqwest::Client;
+use serde::{de, Deserialize, Deserializer, Serialize};
+use serde_json::json;
 
 const SEASONAL: &str = "
 query ($season: MediaSeason, $seasonYear: Int){
@@ -76,12 +56,27 @@ pub struct AniShow {
     pub duration: Option<u16>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct FuzzyDate {
     pub year: Option<u16>,
     #[serde(deserialize_with = "deserialize_month")]
     pub month: Option<String>,
     pub day: Option<u8>,
+}
+
+impl fmt::Display for FuzzyDate {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match (&self.year, &self.month, &self.day) {
+            (Some(year), Some(month), Some(day)) => write!(f, "{} {}, {}", month, day, year),
+            (Some(year), Some(month), None) => write!(f, "{} {}", month, year),
+            (Some(year), None, None) => write!(f, "{}", year),
+            (None, Some(month), Some(day)) => write!(f, "{} {}", month, day),
+            (_, Some(month), None) => write!(f, "{}", month),
+            (None, None, Some(day)) => write!(f, "{}", day),
+            (None, None, None) => write!(f, ""),
+            (Some(_), None, Some(_)) => write!(f, ""),
+        }
+    }
 }
 
 fn deserialize_month<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
@@ -151,10 +146,7 @@ pub enum Season {
     SUMMER,
 }
 
-pub async fn get_anilist_data(
-    season: Season,
-    year: u16,
-) -> anyhow::Result<Vec<AniShow>> {
+pub async fn get_anilist_data(season: Season, year: u16) -> anyhow::Result<Vec<AniShow>> {
     let client = Client::new();
     // Define query and variables
     //let json = json!({"query": query, "variables": {"id": 15125}});
@@ -165,13 +157,9 @@ pub async fn get_anilist_data(
         .header("Accept", "application/json")
         .body(json.to_string())
         .send()
-        .await
-        .context("Failed to send request")?
-        .text()
-        .await
-        .context("Failed to convert response to text")?;
-    let result: Response =
-        serde_json::from_str(&resp).context("Failed to deserialize to struct")?;
+        .await?;
+    let text_resp = resp.text().await?;
+    let result: Response = serde_json::from_str(&text_resp)?;
 
     Ok(result.data.page.media)
 }

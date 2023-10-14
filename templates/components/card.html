@@ -10,27 +10,28 @@
  -->
 <div class="bg-black rounded shadow-md h-auto w-[250px] p-2 text-white">
     <!-- Image -->
-    <img class="object-cover w-full h-[300px] rounded-t" src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx159886-1P6KzRTSsX5E.jpg" alt="Jujutsu Kaisen 2nd Season">
+    <img class="object-cover w-full h-[300px] rounded-t" src="{{ show.cover_image.as_ref().unwrap().large.as_ref().unwrap() }}" alt="Jujutsu Kaisen 2nd Season">
 
     <!-- Content below image -->
     <div class="text-left pl-1">
         <!-- Title -->
-        <h2 class="pt-2 font-semibold mb-2 text-xl">Jujutsu Kaisen 2nd Season</h2>
+        <h2 class="pt-2 font-semibold mb-2 text-xl">{{ show.title.as_ref().unwrap().romaji.as_ref().unwrap() }}</h2>
 
         <!-- Date and Episode Info -->
         <div class="flex justify-between items-center">
-            <p class="text-sm">{{ show.start_date.as_ref().unwrap().month.unwrap()}}, {{ show.start_date.as_ref().unwrap().day.unwrap()}} {{ show.start_date.as_ref().unwrap().year.unwrap()}}</p>
+            <p class="text-sm">{{ show.start_date.as_ref().unwrap() }}</p>
             <p class="text-sm bg-green-500 px-2 py-1 rounded">23 eps, 23 min</p>
         </div>
 
         <!-- Genre Tags -->
-        <div class="flex mt-2">
-            <span class="bg-gray-500 text-xs px-2 py-1 rounded mr-1">Action</span>
-            <span class="bg-gray-500 text-xs px-2 py-1 rounded">Fantasy</span>
-        </div>
+        <!-- <div class="mt-2 flex flex-wrap"> -->
+            {% for genre in show.genres.as_ref().unwrap() %}
+                <span class="bg-gray-500 text-xs px-2 py-1 rounded mr-1 flex-shrink-0">{{ genre }}</span>
+            {% endfor %}
+            <!-- </div> -->
 
         <!-- Description -->
-        <p class="text-xs mt-2 truncate ...">The year is 2006, and the halls of Tokyo...</p>
+        <p class="text-xs mt-2 truncate ...">{{ show.description.as_ref().unwrap() }}</p>
 
         <!-- Studio and Rating -->
         <div class="flex justify-between items-center mt-2">

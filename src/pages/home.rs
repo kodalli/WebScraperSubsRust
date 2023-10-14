@@ -32,26 +32,19 @@ pub struct HomeTemplate {
 }
 
 async fn get_seasonal() -> anyhow::Result<Vec<AniShow>> {
-    let res = match get_anilist_data(Season::FALL, 2023).await {
-        anyhow::Result::Ok(res) => res,
-        Err(err) => {
+    match get_anilist_data(Season::FALL, 2023).await {
+        std::result::Result::Ok(res) => Ok(res),
+        std::result::Result::Err(err) => {
             println!("Failed to fetch seasonal anime. Error: {}", err);
-            Vec::new()
+            Ok(Vec::new())
         }
-    };
-    let shows: Vec<AniShow> = res.to_owned();
-    Ok(shows)
+    }
 }
 
 pub async fn view(State(state): State<Arc<Mutex<UserState>>>) -> impl IntoResponse {
-    let lock = state.lock().await;
-    let cards: Vec<AniShow> = get_seasonal()
-        .await
-        .unwrap();
-    let template = HomeTemplate {
-        user: { lock.user.clone() },
-        shows: cards,
-    };
+    let user = { state.lock().await.user.clone() };
+    let cards: Vec<AniShow> = get_seasonal().await.unwrap_or_default();
+    let template = HomeTemplate { user, shows: cards };
     HtmlTemplate::new(template)
 }
 
