@@ -1,5 +1,5 @@
 use crate::{
-    pages::HtmlTemplate,
+    pages::{HtmlTemplate, filters},
     scraper::anilist::{get_anilist_data, AniShow, Season},
 };
 use anyhow::Ok;
@@ -12,6 +12,7 @@ use axum::{
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
 
 #[derive(Deserialize)]
 pub struct UserState {

@@ -172,7 +172,9 @@ mod test {
     async fn test_anilist() {
         match get_anilist_data(Season::FALL, 2023).await {
             core::result::Result::Ok(res) => {
-                println!("Success {:?}", res)
+                println!("Success {:?}", res);
+                let show: &AniShow = res.get(0).unwrap();
+                let ep = show.episodes.as_ref().map_or("N/A".to_string(), |e| e.to_string());
             }
             Err(err) => {
                 println!("Error: {:?}", err);

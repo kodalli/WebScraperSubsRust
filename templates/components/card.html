@@ -1,48 +1,43 @@
-<!--
-<div class="bg-black rounded shadow-md w-[165px] h-[247px]">
-    <img class="object-cover w-full h-full" src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx159886-1P6KzRTSsX5E.jpg" alt="">
-    <div class="text-left pl-1">
-        <h2 class="pt-1 font-semibold mb-2">Show Title</h2>
-        <p>Tuesday</p>
-        <p>Rating: 69</p>
-    </div>
-</div>
- -->
-<div class="bg-black rounded shadow-md h-auto w-[250px] p-2 text-white">
+<div class="bg-black rounded shadow-md w-64 h-[700px] p-2 text-white flex flex-col overflow-hidden">
+
+    {% let title = show.title|unwrap_title_romaji %}
     <!-- Image -->
-    <img class="object-cover w-full h-[300px] rounded-t" src="{{ show.cover_image.as_ref().unwrap().large.as_ref().unwrap() }}" alt="Jujutsu Kaisen 2nd Season">
+    <img class="rounded-t w-full h-[300px] object-cover" src="{{ show.cover_image|unwrap_cover }}" alt="{{ title }}">
 
     <!-- Content below image -->
-    <div class="text-left pl-1">
+    <div class="text-left pl-1 flex-grow">
         <!-- Title -->
-        <h2 class="pt-2 font-semibold mb-2 text-xl">{{ show.title.as_ref().unwrap().romaji.as_ref().unwrap() }}</h2>
+        <h2 class="pt-2 font-semibold mb-2 text-xl">{{ title }}</h2>
 
         <!-- Date and Episode Info -->
         <div class="flex justify-between items-center">
-            <p class="text-sm">{{ show.start_date.as_ref().unwrap() }}</p>
-            <p class="text-sm bg-green-500 px-2 py-1 rounded">23 eps, 23 min</p>
+            <p class="text-sm">{{ show.start_date|unwrap_or_na }}</p>
+            <p class="text-xs px-2 py-1 rounded">{{ show.episodes|unwrap_or_na }} eps, {{ show.duration|unwrap_or_na }}
+                min</p>
         </div>
 
         <!-- Genre Tags -->
         <!-- <div class="mt-2 flex flex-wrap"> -->
-            {% for genre in show.genres.as_ref().unwrap() %}
-                <span class="bg-gray-500 text-xs px-2 py-1 rounded mr-1 flex-shrink-0">{{ genre }}</span>
-            {% endfor %}
-            <!-- </div> -->
-
-        <!-- Description -->
-        <p class="text-xs mt-2 truncate ...">{{ show.description.as_ref().unwrap() }}</p>
+        {% for genre in show.genres.as_ref().unwrap() %}
+        <span class="bg-gray-500 text-xs px-2 py-1 rounded mr-1 flex-shrink-0">{{ genre }}</span>
+        {% endfor %}
+        <!-- </div> -->
 
         <!-- Studio and Rating -->
         <div class="flex justify-between items-center mt-2">
             <p class="text-xs">Studio: MAPPA</p>
-            <p class="text-xs">⭐ 8.83   &#x1F464; 618K</p>
+            <p class="text-xs">⭐ {{ show|unwrap_score }} &#x1F464; {{ show|unwrap_members }}</p>
         </div>
 
-        <!-- Watching Indicator -->
-        <div class="text-right mt-2">
-            <p class="text-xs bg-green-500 px-2 py-1 rounded">Watching 4 ep</p>
-        </div>
+
     </div>
-</div>
 
+    <!-- Description -->
+    <p class="text-xs mt-2 pl-1 flex-grow overflow-y-auto">{{ show.description|unwrap_or_na|safe }}</p>
+
+    <!-- Watching Indicator -->
+    <div class="text-right mt-2 pl-1">
+        <p class="text-xs bg-green-500 px-2 py-1 rounded">Tracking</p>
+    </div>
+
+</div>

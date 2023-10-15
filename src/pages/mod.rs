@@ -1,6 +1,8 @@
 mod html_template;
-pub mod home;
+mod filters;
 pub mod fortune;
+pub mod home;
 pub mod anime;
 
 pub use html_template::*;
+pub use filters::*;
