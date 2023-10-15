@@ -25,7 +25,7 @@
 
         <!-- Studio and Rating -->
         <div class="flex justify-between items-center mt-2">
-            <p class="text-xs">Studio: MAPPA</p>
+            <p class="text-xs w-1/2 flex-grow overflow-x-auto">Studio: {{ show.studios|unwrap_studio }}</p>
             <p class="text-xs">⭐ {{ show|unwrap_score }} &#x1F464; {{ show|unwrap_members }}</p>
         </div>
 

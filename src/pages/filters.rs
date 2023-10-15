@@ -1,4 +1,4 @@
-use crate::scraper::anilist::{AniShow, Title, CoverImage};
+use crate::scraper::anilist::{AniShow, CoverImage, Studio, Title};
 
 pub fn unwrap_or_na<T: std::fmt::Display>(value: &Option<T>) -> ::askama::Result<String> {
     Ok(value.as_ref().map_or("N/A".to_string(), |v| v.to_string()))
@@ -17,6 +17,18 @@ pub fn unwrap_cover(cover: &Option<CoverImage>) -> ::askama::Result<String> {
        .and_then(|c| c.large.as_ref())
        .map_or("https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/No-Image-Placeholder.svg/800px-No-Image-Placeholder.svg.png".into(), |v| v.to_string())
         )
+}
+
+pub fn unwrap_studio(studio: &Option<Studio>) -> ::askama::Result<String> {
+    Ok(studio
+        .as_ref()
+        .and_then(|t| t.nodes.as_ref())
+        .map_or("N/A".to_string(), |v| {
+            v.into_iter()
+                .map(|f| f.name.as_deref().unwrap_or("N/A"))
+                .collect::<Vec<&str>>()
+                .join(", ")
+        }))
 }
 
 pub fn unwrap_score(show: &AniShow) -> ::askama::Result<String> {
@@ -50,6 +62,6 @@ pub fn unwrap_members(show: &AniShow) -> ::askama::Result<String> {
                 Ok(format!("{:?}K", members_val))
             }
         }
-        None => Ok("N/A".into())
+        None => Ok("N/A".into()),
     }
 }

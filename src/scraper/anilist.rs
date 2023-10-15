@@ -21,6 +21,11 @@ query ($season: MediaSeason, $seasonYear: Int){
       meanScore
       popularity
       genres
+      studios (isMain: true) {
+          nodes {
+              name
+          }
+      }
       coverImage {
           medium
           large
@@ -54,6 +59,17 @@ pub struct AniShow {
     pub start_date: Option<FuzzyDate>,
     pub episodes: Option<u16>,
     pub duration: Option<u16>,
+    pub studios: Option<Studio>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Studio {
+    pub nodes: Option<Vec<Node>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Node {
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -159,6 +175,7 @@ pub async fn get_anilist_data(season: Season, year: u16) -> anyhow::Result<Vec<A
         .send()
         .await?;
     let text_resp = resp.text().await?;
+    println!("{:?}", text_resp);
     let result: Response = serde_json::from_str(&text_resp)?;
 
     Ok(result.data.page.media)
@@ -173,8 +190,6 @@ mod test {
         match get_anilist_data(Season::FALL, 2023).await {
             core::result::Result::Ok(res) => {
                 println!("Success {:?}", res);
-                let show: &AniShow = res.get(0).unwrap();
-                let ep = show.episodes.as_ref().map_or("N/A".to_string(), |e| e.to_string());
             }
             Err(err) => {
                 println!("Error: {:?}", err);
