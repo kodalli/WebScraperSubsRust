@@ -5,7 +5,7 @@
     <img class="rounded-t w-full h-[300px] object-cover" src="{{ show.cover_image|unwrap_cover }}" alt="{{ title }}">
 
     <!-- Content below image -->
-    <div class="text-left pl-1 flex-grow">
+    <div class="text-left pl-1">
         <!-- Title -->
         <h2 class="pt-2 font-semibold mb-2 text-xl">{{ title }}</h2>
 
@@ -17,18 +17,17 @@
         </div>
 
         <!-- Genre Tags -->
-        <!-- <div class="mt-2 flex flex-wrap"> -->
-        {% for genre in show.genres.as_ref().unwrap() %}
-        <span class="bg-gray-500 text-xs px-2 py-1 rounded mr-1 flex-shrink-0">{{ genre }}</span>
-        {% endfor %}
-        <!-- </div> -->
+        <div class="mt-2 flex flex-wrap">
+            {% for genre in show.genres.as_ref().unwrap() %}
+            <span class="bg-gray-500 text-xs px-2 py-1 rounded mr-1 mb-1">{{ genre }}</span>
+            {% endfor %}
+        </div>
 
         <!-- Studio and Rating -->
         <div class="flex justify-between items-center mt-2">
             <p class="text-xs">Studio: MAPPA</p>
             <p class="text-xs">⭐ {{ show|unwrap_score }} &#x1F464; {{ show|unwrap_members }}</p>
         </div>
-
 
     </div>
 
