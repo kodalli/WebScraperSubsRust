@@ -1,27 +1,35 @@
 use crate::{
-    pages::{HtmlTemplate, filters},
+    pages::{filters, HtmlTemplate},
     scraper::anilist::{get_anilist_data, AniShow, Season},
 };
 use anyhow::Ok;
 use askama::Template;
 use axum::{
-    extract::State,
+    extract::{State, Query},
     response::{Html, IntoResponse},
     Form,
 };
 use serde::Deserialize;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
-
 
 #[derive(Deserialize)]
 pub struct UserState {
-    user: String,
+    pub user: String,
+    pub tracker: HashMap<String, bool>,
+}
+
+#[derive(Deserialize)]
+pub struct TrackerQuery {
+    pub title: String,
 }
 
 impl UserState {
     pub fn new(user: String) -> Self {
-        Self { user }
+        Self {
+            user,
+            tracker: HashMap::new(),
+        }
     }
 }
 
@@ -61,4 +69,52 @@ pub async fn update_user(
     *lock = UserState::new(payload.user.to_string());
 
     Html(format!("{}", payload.user))
+}
+
+#[axum::debug_handler]
+pub async fn set_tracker(
+    State(state): State<Arc<Mutex<UserState>>>,
+    Form(payload): Form<TrackerQuery>,
+) -> impl IntoResponse {
+    let title = payload.title.clone();
+    println!("Set Tracker! {:?}", title);
+    let mut lock = state.lock().await;
+
+    // Using the entry API for more idiomatic code
+    let status = match lock.tracker.entry(title) {
+        std::collections::hash_map::Entry::Vacant(e) => {
+            e.insert(true);
+            true
+        }
+        std::collections::hash_map::Entry::Occupied(mut e) => {
+            let current_status = *e.get();
+            *e.get_mut() = !current_status;
+            !current_status
+        }
+    };
+
+    drop(lock); // Explicitly drop the lock before potentially awaiting again
+
+    if status {
+        Html("Tracking")
+    } else {
+        Html("Not Tracked")
+    }
+}
+
+#[axum::debug_handler]
+pub async fn get_tracker(
+    State(state): State<Arc<Mutex<UserState>>>,
+    Query(query): Query<TrackerQuery>,
+) -> impl IntoResponse {
+    println!("Get Tracker! {:?}", &query.title);
+    let lock = state.lock().await;
+
+    let status = lock.tracker.get(&query.title).unwrap_or(&false);
+
+    if *status {
+        Html("Tracking")
+    } else {
+        Html("Not Tracked")
+    }
 }

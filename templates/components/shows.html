@@ -1,58 +1,42 @@
 <div class="bg-black">
     <div class="py-24"> <!--class="px-6 py-24 sm:px-6 sm:py-32 lg:px-8"-->
-    <div class="mx-auto max-w-2xl text-center">
-      <h1 class="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-        Kod Anime
-      </h1>
-      <p class="mx-auto mt-6 max-w-xl text-lg leading-8 text-gray-200">
-        Anime Tiddies.
-      </p>
-      <div class="mt-10 flex-col space-y-12">
-        <button
-            hx-get="/api/anime"
-          hx-trigger="click"
-          hx-target="#anime"
-          hx-indicator="#anime-spinner"
-          class="rounded-md bg-white px-3.5 py-2.5 text-sm font-semibold text-black shadow-sm transition-colors hover:bg-black hover:text-white hover:ring-2 hover:ring-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-        >
-          Get Anime
-        </button>
+        <div class="mx-auto max-w-2xl text-center">
+            <h1 class="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+                Kod Anime
+            </h1>
+            <p class="mx-auto mt-6 max-w-xl text-lg leading-8 text-gray-200">
+                Anime Tiddies.
+            </p>
+            <div class="mt-10 flex-col space-y-12">
+                <button hx-get="/api/anime" hx-trigger="click" hx-target="#anime" hx-indicator="#anime-spinner"
+                    class="rounded-md bg-white px-3.5 py-2.5 text-sm font-semibold text-black shadow-sm transition-colors hover:bg-black hover:text-white hover:ring-2 hover:ring-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+                    Get Anime
+                </button>
 
-        <div id="anime" class="font-sans italic text-white"></div>
+                <div id="anime" class="font-sans italic text-white"></div>
 
-        <div id="anime-spinner" class="htmx-indicator mx-auto h-12 w-12">
-          <svg
-            class="animate-spin"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              class="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              stroke-width="4"
-            ></circle>
-            <path
-              class="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
+                <div id="anime-spinner" class="htmx-indicator mx-auto h-12 w-12">
+                    <svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
+                        </circle>
+                        <path class="opacity-75" fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                        </path>
+                    </svg>
+                </div>
+            </div>
+
+
+
         </div>
-    </div>
-
-
-
-  </div>
-  <div class="container mx-auto pl-6">
-    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-x-2.5 gap-y-7.5 items-stretch">
-            {% for show in shows %}
+        <div class="container mx-auto pl-6">
+            <div
+                class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-x-2.5 gap-y-7.5 items-stretch">
+                {% for show in shows %}
                 {% include "components/card.html" %}
-            {% endfor %}
-    </div>
-  </div>
+                {% endfor %}
+            </div>
+        </div>
 
+    </div>
 </div>

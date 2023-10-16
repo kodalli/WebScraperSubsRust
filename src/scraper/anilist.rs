@@ -165,7 +165,6 @@ pub enum Season {
 pub async fn get_anilist_data(season: Season, year: u16) -> anyhow::Result<Vec<AniShow>> {
     let client = Client::new();
     // Define query and variables
-    //let json = json!({"query": query, "variables": {"id": 15125}});
     let json = json!({"query": SEASONAL, "variables": {"season": season, "seasonYear": year}});
     let resp = client
         .post("https://graphql.anilist.co/")
@@ -175,7 +174,6 @@ pub async fn get_anilist_data(season: Season, year: u16) -> anyhow::Result<Vec<A
         .send()
         .await?;
     let text_resp = resp.text().await?;
-    println!("{:?}", text_resp);
     let result: Response = serde_json::from_str(&text_resp)?;
 
     Ok(result.data.page.media)

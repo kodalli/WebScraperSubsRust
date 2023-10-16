@@ -34,9 +34,18 @@
     <!-- Description -->
     <p class="text-xs mt-2 pl-1 flex-grow overflow-y-auto">{{ show.description|unwrap_or_na|safe }}</p>
 
+    {% let id = show.id.as_ref().unwrap() %}
+
+    <div hx-get="/api/get_tracker" hx-vals='{"title": "{{ title }}"}' hx-swap="innerText"
+        hx-target="#status-text-{{ id }}" hx-trigger="load"></div>
+
     <!-- Watching Indicator -->
     <div class="text-right mt-2 pl-1">
-        <p class="text-xs bg-green-500 px-2 py-1 rounded">Tracking</p>
+        <button class="text-xs px-2 py-1 rounded bg-red-500 hover::bg-green-500 w-full" hx-post="/api/set_tracker"
+            hx-vals='{"title": "{{ title }}"}' hx-swap="innerText" hx-target="#status-text-{{ id }}">
+            <span id="status-text-{{ id }}">Not Tracked</span>
+        </button>
     </div>
+
 
 </div>
