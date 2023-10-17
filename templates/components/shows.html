@@ -4,34 +4,54 @@
             <h1 class="text-3xl font-bold tracking-tight text-white sm:text-4xl">
                 Kod Anime
             </h1>
-            <p class="mx-auto mt-6 max-w-xl text-lg leading-8 text-gray-200">
+            <p class="mx-auto mt-6 max-w-xl text-lg leading-8 text-gray-200 pb-7">
                 Anime Tiddies.
             </p>
-            <div class="mt-10 flex-col space-y-12">
-                <button hx-get="/api/anime" hx-trigger="click" hx-target="#anime" hx-indicator="#anime-spinner"
-                    class="rounded-md bg-white px-3.5 py-2.5 text-sm font-semibold text-black shadow-sm transition-colors hover:bg-black hover:text-white hover:ring-2 hover:ring-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
-                    Get Anime
-                </button>
-
-                <div id="anime" class="font-sans italic text-white"></div>
-
-                <div id="anime-spinner" class="htmx-indicator mx-auto h-12 w-12">
-                    <svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
-                        </circle>
-                        <path class="opacity-75" fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
-                        </path>
-                    </svg>
-                </div>
-            </div>
-
-
-
         </div>
-        <div class="container mx-auto pl-6">
-            <div
-                class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-x-2.5 gap-y-7.5 items-stretch">
+
+        <style>
+            .custom-grid {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: space-between;
+            }
+
+            .custom-grid>* {
+                flex-basis: calc(100% - 0px);
+                /* for 1 item per row */
+            }
+
+            @media (min-width: 640px) {
+
+                /* sm breakpoint */
+                .custom-grid>* {
+                    flex-basis: calc(50% - 0.5rem);
+                    /* subtracting half the desired space between items */
+                }
+            }
+
+            @media (min-width: 768px) {
+
+                /* md breakpoint */
+                .custom-grid>* {
+                    flex-basis: calc(33.3333% - 0.6667rem);
+                    /* subtracting two-thirds the desired space between items */
+                }
+            }
+
+            @media (min-width: 1024px) {
+
+                /* lg breakpoint */
+                .custom-grid>* {
+                    flex-basis: calc(20% - 1rem);
+                    /* subtracting four-fifths the desired space between items */
+                }
+            }
+        </style>
+
+        <div class="container mx-auto">
+            {% include "components/season_bar.html" %}
+            <div class="custom-grid">
                 {% for show in shows %}
                 {% include "components/card.html" %}
                 {% endfor %}

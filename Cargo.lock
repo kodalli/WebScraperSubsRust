@@ -2312,6 +2312,7 @@ dependencies = [
  "askama",
  "askama_axum",
  "axum",
+ "chrono",
  "reqwest",
  "scraper",
  "serde",

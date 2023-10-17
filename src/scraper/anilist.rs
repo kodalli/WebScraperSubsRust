@@ -150,7 +150,7 @@ struct Response {
     data: Data,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy)]
 pub enum Season {
     #[serde(rename = "SPRING")]
     SPRING,

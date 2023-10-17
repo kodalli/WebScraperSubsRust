@@ -36,14 +36,18 @@
 
     {% let id = show.id.as_ref().unwrap() %}
 
-    <div hx-get="/api/get_tracker" hx-vals='{"title": "{{ title }}"}' hx-swap="innerText"
-        hx-target="#status-text-{{ id }}" hx-trigger="load"></div>
+    <!-- tailwind style needs to be in html to be compiled even though we're swapping out with htmx response -->
+    <!-- <div class="rounded-md bg-black px-3.5 py-2.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-white hover:text-black hover:ring-2 hover:ring-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"> -->
+    <div class="bg-gray-900"></div>
+    <div class="bg-yellow-400"></div>
+
 
     <!-- Watching Indicator -->
-    <div class="text-right mt-2 pl-1">
-        <button class="text-xs px-2 py-1 rounded bg-red-500 hover::bg-green-500 w-full" hx-post="/api/set_tracker"
-            hx-vals='{"title": "{{ title }}"}' hx-swap="innerText" hx-target="#status-text-{{ id }}">
-            <span id="status-text-{{ id }}">Not Tracked</span>
+    <div class="text-right pl-1" hx-get="/api/get_tracker" hx-vals='{"title": "{{ title }}"}' hx-swap="outerHTML" hx-trigger="load">
+        <!-- This initial button would be replaced by the correct state from the server upon page load -->
+        <button class="rounded-md bg-white px-3.5 py-2.5 text-xs font-semibold text-black shadow-sm transition-colors hover:bg-black hover:text-white hover:ring-2 hover:ring-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            hx-post="/api/set_tracker" hx-vals='{"title": "{{ title }}"}' hx-swap="outerHTML">
+            <span id="status-text-{{ id }}">Loading...</span>
         </button>
     </div>
 
