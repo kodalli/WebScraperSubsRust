@@ -5,25 +5,42 @@
         hover:text-black hover:ring-2 hover:ring-black focus-visible:outline focus-visible:outline-2
         focus-visible:outline-offset-2 focus-visible:outline-black" %}
 
+        {% let s0 = seasons.get(0).unwrap().0 %}
+        {% let y0 = seasons.get(0).unwrap().1 %}
+
+        {% let s1 = seasons.get(1).unwrap().0 %}
+        {% let y1 = seasons.get(1).unwrap().1 %}
+
+        {% let s2 = seasons.get(2).unwrap().0 %}
+        {% let y2 = seasons.get(2).unwrap().1 %}
+
+        {% let s3 = seasons.get(3).unwrap().0 %}
+        {% let y3 = seasons.get(3).unwrap().1 %}
+
+
         <ul class="inline-flex list-none p-0 m-0">
             <li class="mx-4">
-                <a href="#spring2023" class="{{ button_style }}">
-                    Spring 2023
+                <a href="#{{ s0 }}{{ y0 }}" class="{{ button_style }}"
+                    hx-get="/api/navigate_seasonal_anime?season={{ s0 }}&year={{ y0 }}" hx-target="#show-grid">
+                    {{ s0 }} {{ y0 }}
                 </a>
             </li>
             <li class="mx-4">
-                <a href="#summer2023" class="{{ button_style }}">
-                    Summer 2023
+                <a href="#{{ s1 }}{{ y1 }}" class="{{ button_style }}"
+                    hx-get="/api/navigate_seasonal_anime?season={{ s1 }}&year={{ y1 }}" hx-target="#show-grid">
+                    {{ s1 }} {{ y1 }}
                 </a>
             </li>
             <li class="mx-4">
-                <a href="#fall2023" class="{{ button_style }}">
-                    Fall 2023
+                <a href="#{{ s2 }}{{ y2 }}" class="{{ button_style }}"
+                    hx-get="/api/navigate_seasonal_anime?season={{ s2 }}&year={{ y2 }}" hx-target="#show-grid">
+                    {{ s2 }} {{ y2 }}
                 </a>
             </li>
             <li class="mx-4">
-                <a href="#winter2024" class="{{ button_style }}">
-                    Winter 2024
+                <a href="#{{ s3 }}{{ y3 }}" class="{{ button_style }}"
+                    hx-get="/api/navigate_seasonal_anime?season={{ s3 }}&year={{ y3 }}" hx-target="#show-grid">
+                    {{ s3 }} {{ y3 }}
                 </a>
             </li>
             <li class="mx-4">

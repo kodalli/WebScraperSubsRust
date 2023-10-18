@@ -1,8 +1,7 @@
-use std::fmt;
-
 use reqwest::Client;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::json;
+use std::fmt;
 
 const SEASONAL: &str = "
 query ($season: MediaSeason, $seasonYear: Int){
@@ -54,6 +53,7 @@ pub struct AniShow {
     pub genres: Option<Vec<String>>,
     #[serde(rename = "coverImage")]
     pub cover_image: Option<CoverImage>,
+    #[serde(deserialize_with = "sanitize_html_string")]
     pub description: Option<String>,
     #[serde(rename = "startDate")]
     pub start_date: Option<FuzzyDate>,
@@ -93,6 +93,55 @@ impl fmt::Display for FuzzyDate {
             (Some(_), None, Some(_)) => write!(f, ""),
         }
     }
+}
+
+fn sanitize_html(input: &str) -> String {
+    let mut sanitized = String::with_capacity(input.len());
+    let mut i_tag_open = false;
+
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '<' if chars.peek().map(|next_ch| next_ch.to_ascii_lowercase()) == Some('i') && chars.clone().nth(1).map(|next_ch| next_ch) == Some('>') => {
+                if i_tag_open {
+                    sanitized.push_str("</i>");
+                    i_tag_open = false;
+                }
+                sanitized.push('<');
+                chars.next(); // 'I' or 'i'
+                sanitized.push('i');
+                sanitized.push(chars.next().unwrap()); // '>'
+                i_tag_open = true;
+            },
+            '<' if chars.peek().map(|&next_ch| next_ch) == Some('/') && chars.clone().nth(1).map(|next_ch| next_ch.to_ascii_lowercase()) == Some('i') && chars.clone().nth(2).map(|next_ch| next_ch) == Some('>') => {
+                if i_tag_open {
+                    sanitized.push(ch);
+                    sanitized.push(chars.next().unwrap()); // '/'
+                    chars.next(); // 'I' or 'i'
+                    sanitized.push('i');
+                    sanitized.push(chars.next().unwrap()); // '>'
+                    i_tag_open = false;
+                } else {
+                    chars.nth(2); // skip "</I" or "</i"
+                }
+            },
+            _ => sanitized.push(ch),
+        }
+    }
+
+    if i_tag_open {
+        sanitized.push_str("</i>");
+    }
+
+    sanitized
+}
+
+fn sanitize_html_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s: Option<String> = Option::deserialize(deserializer)?;
+    Ok(s.map(|str| sanitize_html(&str)))
 }
 
 fn deserialize_month<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>

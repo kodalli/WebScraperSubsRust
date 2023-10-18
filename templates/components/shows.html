@@ -50,11 +50,11 @@
         </style>
 
         <div class="container mx-auto">
-            {% include "components/season_bar.html" %}
-            <div class="custom-grid">
-                {% for show in shows %}
-                {% include "components/card.html" %}
-                {% endfor %}
+            <div id="nav-bar">
+                {{ navbar|safe }}
+            </div>
+            <div id="show-grid">
+                {{ grid|safe }}
             </div>
         </div>
 
