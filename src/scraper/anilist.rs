@@ -98,10 +98,28 @@ impl fmt::Display for FuzzyDate {
 fn sanitize_html(input: &str) -> String {
     let mut sanitized = String::with_capacity(input.len());
     let mut i_tag_open = false;
+    let mut in_comment = false;
 
     let mut chars = input.chars().peekable();
     while let Some(ch) = chars.next() {
+        if in_comment {
+            sanitized.push(ch);
+            if ch == '-' && chars.peek() == Some(&'-') && chars.clone().nth(1) == Some('>') {
+                sanitized.push(chars.next().unwrap()); // '-'
+                sanitized.push(chars.next().unwrap()); // '>'
+                in_comment = false;
+            }
+            continue;
+        }
+
         match ch {
+            '<' if chars.peek() == Some(&'!') && chars.clone().nth(1) == Some('-') && chars.clone().nth(2) == Some('-') => {
+                sanitized.push(ch);
+                sanitized.push(chars.next().unwrap()); // '!'
+                sanitized.push(chars.next().unwrap()); // '-'
+                sanitized.push(chars.next().unwrap()); // '-'
+                in_comment = true;
+            },
             '<' if chars.peek().map(|next_ch| next_ch.to_ascii_lowercase()) == Some('i') && chars.clone().nth(1).map(|next_ch| next_ch) == Some('>') => {
                 if i_tag_open {
                     sanitized.push_str("</i>");
@@ -135,6 +153,7 @@ fn sanitize_html(input: &str) -> String {
 
     sanitized
 }
+
 
 fn sanitize_html_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
