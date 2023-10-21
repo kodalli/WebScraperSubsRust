@@ -11,7 +11,7 @@ use scraper::transmission::upload_to_transmission_rpc;
 use tower_http::services::ServeDir;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use pages::{home::{UserState, view, update_user, set_tracker, get_tracker, navigate_seasonal_anime}, anime::seasonal_anime};
+use pages::{home::{UserState, view, update_user, set_tracker, navigate_seasonal_anime}, anime::seasonal_anime};
 use pages::fortune::fortune;
 
 
@@ -58,7 +58,6 @@ fn api_router(state: AppState) -> Router {
     // clone on arc just increases reference count
     Router::new().route("/login", post(update_user).with_state(state.user.clone()))
         .route("/set_tracker", post(set_tracker).with_state(state.user.clone()))
-        .route("/get_tracker", get(get_tracker).with_state(state.user.clone()))
         .route("/navigate_seasonal_anime", get(navigate_seasonal_anime).with_state(state.user.clone()))
         .route("/fortune", get(fortune))
         .route("/anime", get(seasonal_anime))

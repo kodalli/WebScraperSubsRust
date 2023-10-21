@@ -61,6 +61,7 @@ pub struct HomeTemplate {
 #[template(path = "components/card.html")]
 pub struct CardTemplate {
     pub show: AniShow,
+    pub tracker: TrackedTemplate,
 }
 
 #[derive(Template)]
@@ -77,7 +78,13 @@ pub struct NavBarTemplate {
 
 #[derive(Template)]
 #[template(path = "components/table.html")]
-pub struct TableTemplate {
+pub struct TableTemplate {}
+
+#[derive(Template)]
+#[template(path = "components/tracked.html")]
+pub struct TrackedTemplate {
+    title: String,
+    tracked: bool,
 }
 
 async fn get_seasonal(season: Season, year: u16) -> anyhow::Result<Vec<AniShow>> {
@@ -155,16 +162,23 @@ fn get_seasons_around(season: Season, year: u16) -> Vec<(Season, u16)> {
 
     seasons
 }
+fn build_card_templates(shows: &[AniShow], lock: &UserState) -> Vec<CardTemplate> {
+    shows.iter().map(|show| {
+        let title = show.title.as_ref().map_or("N/A".into(), |t| t.romaji.as_deref().unwrap_or("N/A").into());
+        let tracked = show.title.as_ref().map_or(false, |t| t.romaji.as_ref().map_or(false, |t1| lock.tracker.get(t1).is_some()));
 
+        CardTemplate {
+            show: show.clone(),
+            tracker: TrackedTemplate { title, tracked },
+        }
+    }).collect()
+}
 pub async fn view(State(state): State<Arc<Mutex<UserState>>>) -> impl IntoResponse {
     let lock = state.lock().await;
     let shows: Vec<AniShow> = get_seasonal(lock.season, lock.year)
         .await
         .unwrap_or_default();
-    let card_templates: Vec<CardTemplate> = shows
-        .iter()
-        .map(|show| CardTemplate { show: show.clone() })
-        .collect();
+    let card_templates: Vec<CardTemplate> = build_card_templates(&shows, &lock);
     let grid_template = GridTemplate {
         cards: card_templates,
     };
@@ -175,7 +189,7 @@ pub async fn view(State(state): State<Arc<Mutex<UserState>>>) -> impl IntoRespon
         season: lock.season,
         year: lock.year,
         navbar: NavBarTemplate { seasons },
-        table: TableTemplate {  },
+        table: TableTemplate {},
     };
     HtmlTemplate::new(template)
 }
@@ -205,10 +219,7 @@ pub async fn navigate_seasonal_anime(
         .await
         .unwrap_or_default();
 
-    let card_templates: Vec<CardTemplate> = cards
-        .iter()
-        .map(|show| CardTemplate { show: show.clone() })
-        .collect();
+    let card_templates: Vec<CardTemplate> = build_card_templates(&cards, &lock);
 
     let grid = GridTemplate {
         cards: card_templates,
@@ -231,7 +242,7 @@ pub async fn update_user(
 #[axum::debug_handler]
 pub async fn set_tracker(
     State(state): State<Arc<Mutex<UserState>>>,
-    Form(payload): Form<TrackerQuery>,
+    Query(payload): Query<TrackerQuery>,
 ) -> impl IntoResponse {
     let title = payload.title;
     println!("Set Tracker! {:?}", title);
@@ -250,38 +261,8 @@ pub async fn set_tracker(
         }
     };
 
-    render_tracking(is_tracking, &title)
+    let template = TrackedTemplate { title, tracked: is_tracking };
+    HtmlTemplate::new(template)
 }
 
-#[axum::debug_handler]
-pub async fn get_tracker(
-    State(state): State<Arc<Mutex<UserState>>>,
-    Query(query): Query<TrackerQuery>,
-) -> impl IntoResponse {
-    println!("Get Tracker! {:?}", &query.title);
-    let lock = state.lock().await;
 
-    let is_tracking = lock.tracker.get(&query.title).unwrap_or(&false);
-
-    render_tracking(*is_tracking, &query.title)
-}
-
-fn render_tracking(status: bool, title: &str) -> impl IntoResponse {
-    let not_tracked = "rounded-md bg-yellow-400 px-2 py-3 font-semibold text-black shadow-sm transition-colors hover:bg-black hover:text-white hover:ring-2 hover:ring-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
-    let tracked = "rounded-md bg-gray-900 px-2 py-3 font-semibold text-white shadow-sm transition-colors hover:bg-white hover:text-black hover:ring-2 hover:ring-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black";
-    if status {
-        Html(render_tracking_button("Tracking", tracked, title))
-    } else {
-        Html(render_tracking_button("Not Tracked", not_tracked, title))
-    }
-}
-
-fn render_tracking_button(status: &str, class: &str, title: &str) -> String {
-    format!(
-        r#"<button class="text-right text-xs px-2 py-1 rounded {}" hx-post="/api/set_tracker"
-        hx-vals='{{"title": "{}"}}' hx-swap="outerHTML">
-        <span>{}</span>
-    </button>"#,
-        class, title.replace("\"", "\\\""), status
-    )
-}
