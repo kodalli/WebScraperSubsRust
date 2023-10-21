@@ -60,6 +60,8 @@ pub struct AniShow {
     pub episodes: Option<u16>,
     pub duration: Option<u16>,
     pub studios: Option<Studio>,
+    pub latest_episode: Option<u16>,
+    pub next_air_date: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -18,14 +18,9 @@ use tokio::sync::Mutex;
 #[derive(Deserialize)]
 pub struct UserState {
     pub user: String,
-    pub tracker: HashMap<String, bool>,
+    pub tracker: HashMap<String, TableEntry>,
     pub season: Season,
     pub year: u16,
-}
-
-#[derive(Deserialize)]
-pub struct TrackerQuery {
-    pub title: String,
 }
 
 #[derive(Deserialize)]
@@ -78,13 +73,29 @@ pub struct NavBarTemplate {
 
 #[derive(Template)]
 #[template(path = "components/table.html")]
-pub struct TableTemplate {}
+pub struct TableTemplate {
+    shows: Vec<TableEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TableEntry {
+    title: String,
+    latest_episode: String,
+    next_air_date: String,
+    is_tracked: bool,
+}
 
 #[derive(Template)]
 #[template(path = "components/tracked.html")]
 pub struct TrackedTemplate {
-    title: String,
-    tracked: bool,
+    entry: TableEntry,
+}
+
+#[derive(Template)]
+#[template(path = "components/tracked.html")]
+pub struct TrackedTableTemplate {
+    entry: TableEntry,
+    pub table: TableTemplate,
 }
 
 async fn get_seasonal(season: Season, year: u16) -> anyhow::Result<Vec<AniShow>> {
@@ -162,17 +173,37 @@ fn get_seasons_around(season: Season, year: u16) -> Vec<(Season, u16)> {
 
     seasons
 }
-fn build_card_templates(shows: &[AniShow], lock: &UserState) -> Vec<CardTemplate> {
-    shows.iter().map(|show| {
-        let title = show.title.as_ref().map_or("N/A".into(), |t| t.romaji.as_deref().unwrap_or("N/A").into());
-        let tracked = show.title.as_ref().map_or(false, |t| t.romaji.as_ref().map_or(false, |t1| lock.tracker.get(t1).is_some()));
 
-        CardTemplate {
-            show: show.clone(),
-            tracker: TrackedTemplate { title, tracked },
-        }
-    }).collect()
+fn build_card_templates(shows: &[AniShow], lock: &UserState) -> Vec<CardTemplate> {
+    shows
+        .iter()
+        .map(|show| {
+            let title = show.title.as_ref().map_or("N/A".into(), |t| {
+                t.romaji.as_deref().unwrap_or("N/A").into()
+            });
+            let tracked = show.title.as_ref().map_or(false, |t| {
+                t.romaji
+                    .as_ref()
+                    .map_or(false, |t1| lock.tracker.get(t1).is_some())
+            });
+
+            CardTemplate {
+                show: show.clone(),
+                tracker: TrackedTemplate {
+                    entry: TableEntry {
+                        title,
+                        latest_episode: show
+                            .latest_episode
+                            .map_or_else(|| "N/A".to_string(), |e| format!("Episode {}", e)),
+                        next_air_date: show.next_air_date.clone().unwrap_or("N/A".to_string()),
+                        is_tracked: tracked,
+                    },
+                },
+            }
+        })
+        .collect()
 }
+
 pub async fn view(State(state): State<Arc<Mutex<UserState>>>) -> impl IntoResponse {
     let lock = state.lock().await;
     let shows: Vec<AniShow> = get_seasonal(lock.season, lock.year)
@@ -189,7 +220,9 @@ pub async fn view(State(state): State<Arc<Mutex<UserState>>>) -> impl IntoRespon
         season: lock.season,
         year: lock.year,
         navbar: NavBarTemplate { seasons },
-        table: TableTemplate {},
+        table: TableTemplate {
+            shows: lock.tracker.values().cloned().collect(),
+        },
     };
     HtmlTemplate::new(template)
 }
@@ -242,27 +275,27 @@ pub async fn update_user(
 #[axum::debug_handler]
 pub async fn set_tracker(
     State(state): State<Arc<Mutex<UserState>>>,
-    Query(payload): Query<TrackerQuery>,
+    Query(payload): Query<TableEntry>,
 ) -> impl IntoResponse {
-    let title = payload.title;
-    println!("Set Tracker! {:?}", title);
     let mut lock = state.lock().await;
+    let mut new_payload = payload.clone();
+    new_payload.is_tracked = !new_payload.is_tracked;
+    lock.tracker
+        .insert(new_payload.title.clone(), new_payload.clone());
 
-    // Using the entry API for more idiomatic code
-    let is_tracking = match lock.tracker.entry(title.clone()) {
-        std::collections::hash_map::Entry::Vacant(e) => {
-            e.insert(true);
-            true
-        }
-        std::collections::hash_map::Entry::Occupied(mut e) => {
-            let current_status = *e.get();
-            *e.get_mut() = !current_status;
-            !current_status
-        }
+    let template = TrackedTemplate {
+        entry: new_payload,
     };
 
-    let template = TrackedTemplate { title, tracked: is_tracking };
-    HtmlTemplate::new(template)
+    HtmlTemplate::new(template).with_header("HX-Trigger", "newTrackerStatus")
 }
 
+#[axum::debug_handler]
+pub async fn show_table(State(state): State<Arc<Mutex<UserState>>>) -> impl IntoResponse {
+    let lock = state.lock().await;
 
+    let template = TableTemplate {
+        shows: lock.tracker.values().cloned().collect(),
+    };
+    HtmlTemplate::new(template)
+}

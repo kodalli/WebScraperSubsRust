@@ -14,7 +14,7 @@
                 {{ navbar|safe }}
             </div>
 
-            <div id="show-table">
+            <div id="show-table" hx-get="/api/show_table" hx-trigger="newTrackerStatus from:body">
                 {{ table|safe }}
             </div>
 
