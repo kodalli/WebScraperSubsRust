@@ -65,3 +65,7 @@ pub fn unwrap_members(show: &AniShow) -> ::askama::Result<String> {
         None => Ok("N/A".into()),
     }
 }
+
+pub fn escape_quotes(text: &str) -> ::askama::Result<String> {
+    Ok(text.replace("\"", "\\\""))
+}

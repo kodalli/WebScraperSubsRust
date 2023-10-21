@@ -293,6 +293,6 @@ fn render_tracking_button(status: &str, class: &str, title: &str) -> String {
         hx-vals='{{"title": "{}"}}' hx-swap="outerHTML">
         <span>{}</span>
     </button>"#,
-        class, title, status
+        class, title.replace("\"", "\\\""), status
     )
 }

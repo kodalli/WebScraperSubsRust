@@ -143,6 +143,11 @@ fn sanitize_html(input: &str) -> String {
                     chars.nth(2); // skip "</I" or "</i"
                 }
             },
+            '<' if chars.peek().map(|&next_ch| next_ch) == Some('/') && !chars.clone().nth(1).map(|next_ch| next_ch.is_alphabetic()).unwrap_or_default() => {
+                // broken tag, skip two characters
+                chars.next();
+                chars.next();
+            },
             _ => sanitized.push(ch),
         }
     }
