@@ -83,6 +83,7 @@ pub struct TableEntry {
     latest_episode: String,
     next_air_date: String,
     is_tracked: bool,
+    id: u32,
 }
 
 #[derive(Template)]
@@ -197,6 +198,7 @@ fn build_card_templates(shows: &[AniShow], lock: &UserState) -> Vec<CardTemplate
                             .map_or_else(|| "N/A".to_string(), |e| format!("Episode {}", e)),
                         next_air_date: show.next_air_date.clone().unwrap_or("N/A".to_string()),
                         is_tracked: tracked,
+                        id: show.id.unwrap(),
                     },
                 },
             }
@@ -280,12 +282,13 @@ pub async fn set_tracker(
     let mut lock = state.lock().await;
     let mut new_payload = payload.clone();
     new_payload.is_tracked = !new_payload.is_tracked;
-    lock.tracker
-        .insert(new_payload.title.clone(), new_payload.clone());
-
-    let template = TrackedTemplate {
-        entry: new_payload,
-    };
+    if new_payload.is_tracked {
+        lock.tracker
+            .insert(new_payload.title.clone(), new_payload.clone());
+    } else {
+        lock.tracker.remove(&new_payload.title);
+    }
+    let template = TrackedTemplate { entry: new_payload };
 
     HtmlTemplate::new(template).with_header("HX-Trigger", "newTrackerStatus")
 }

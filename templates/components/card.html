@@ -34,8 +34,6 @@
     <!-- Description -->
     <p class="text-xs mt-2 pl-1 flex-grow overflow-y-auto">{{ show.description|unwrap_or_na|safe }}</p>
 
-    {% let id = show.id.as_ref().unwrap() %}
-
     {{ tracker|safe }}
 
 </div>

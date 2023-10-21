@@ -2,17 +2,20 @@
 {% let title = entry.title.clone() %}
 {% let next_air_date = entry.next_air_date.clone() %}
 {% let latest_episode = entry.latest_episode.clone() %}
+{% let id = entry.id %}
 {% if is_tracked %}
 <button
+    id="tracker-{{ id }}"
     class="text-right text-xs px-2 py-1 rounded rounded-md bg-gray-900 font-semibold text-white shadow-sm transition-colors hover:bg-white hover:text-black hover:ring-2 hover:ring-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
-    hx-post="/api/set_tracker?latest_episode={{ latest_episode }}&next_air_date={{ next_air_date }}&is_tracked={{ is_tracked }}&title={{ title|escape_quotes }}"
+    hx-post="/api/set_tracker?id={{ id }}&latest_episode={{ latest_episode }}&next_air_date={{ next_air_date }}&is_tracked={{ is_tracked }}&title={{ title|escape_quotes }}"
     hx-swap="outerHTML">
     <span>Tracked</span>
 </button>
 {% else %}
 <button
+    id="tracker-{{ id }}"
     class="text-right text-xs px-2 py-1 rounded-md bg-yellow-400 font-semibold text-black shadow-sm transition-colors hover:bg-black hover:text-white hover:ring-2 hover:ring-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-    hx-post="/api/set_tracker?latest_episode={{ latest_episode }}&next_air_date={{ next_air_date }}&is_tracked={{ is_tracked }}&title={{ title|escape_quotes }}"
+    hx-post="/api/set_tracker?id={{ id }}&latest_episode={{ latest_episode }}&next_air_date={{ next_air_date }}&is_tracked={{ is_tracked }}&title={{ title|escape_quotes }}"
     hx-swap="outerHTML">
     <span>Not Tracked</span>
 </button>
