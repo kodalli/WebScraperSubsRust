@@ -9,50 +9,15 @@
             </p>
         </div>
 
-        <style>
-            .custom-grid {
-                display: flex;
-                flex-wrap: wrap;
-                justify-content: space-between;
-            }
-
-            .custom-grid>* {
-                flex-basis: calc(100% - 0px);
-                /* for 1 item per row */
-            }
-
-            @media (min-width: 640px) {
-
-                /* sm breakpoint */
-                .custom-grid>* {
-                    flex-basis: calc(50% - 0.5rem);
-                    /* subtracting half the desired space between items */
-                }
-            }
-
-            @media (min-width: 768px) {
-
-                /* md breakpoint */
-                .custom-grid>* {
-                    flex-basis: calc(33.3333% - 0.6667rem);
-                    /* subtracting two-thirds the desired space between items */
-                }
-            }
-
-            @media (min-width: 1024px) {
-
-                /* lg breakpoint */
-                .custom-grid>* {
-                    flex-basis: calc(20% - 1rem);
-                    /* subtracting four-fifths the desired space between items */
-                }
-            }
-        </style>
-
         <div class="container mx-auto">
             <div id="nav-bar">
                 {{ navbar|safe }}
             </div>
+
+            <div id="show-table">
+                {{ table|safe }}
+            </div>
+
             <div id="show-grid">
                 {{ grid|safe }}
             </div>

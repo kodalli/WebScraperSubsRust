@@ -52,6 +52,7 @@ pub struct HomeTemplate {
     pub user: String,
     pub grid: GridTemplate,
     pub navbar: NavBarTemplate,
+    pub table: TableTemplate,
     pub season: Season,
     pub year: u16,
 }
@@ -72,6 +73,11 @@ pub struct GridTemplate {
 #[template(path = "components/season_bar.html")]
 pub struct NavBarTemplate {
     pub seasons: Vec<(Season, u16)>,
+}
+
+#[derive(Template)]
+#[template(path = "components/table.html")]
+pub struct TableTemplate {
 }
 
 async fn get_seasonal(season: Season, year: u16) -> anyhow::Result<Vec<AniShow>> {
@@ -169,6 +175,7 @@ pub async fn view(State(state): State<Arc<Mutex<UserState>>>) -> impl IntoRespon
         season: lock.season,
         year: lock.year,
         navbar: NavBarTemplate { seasons },
+        table: TableTemplate {  },
     };
     HtmlTemplate::new(template)
 }
@@ -197,25 +204,7 @@ pub async fn navigate_seasonal_anime(
     let cards: Vec<AniShow> = get_seasonal(lock.season, lock.year)
         .await
         .unwrap_or_default();
-    for c in &cards {
-        if c.title
-            .as_ref()
-            .unwrap()
-            .romaji
-            .as_ref()
-            .unwrap()
-            .contains("Baki")
-        {
-            println!("");
-            println!(
-                "show: {}",
-                c.title.as_ref().unwrap().romaji.as_ref().unwrap()
-            );
-            println!("");
-            println!("description: {}", c.description.as_ref().unwrap());
-            println!("");
-        }
-    }
+
     let card_templates: Vec<CardTemplate> = cards
         .iter()
         .map(|show| CardTemplate { show: show.clone() })

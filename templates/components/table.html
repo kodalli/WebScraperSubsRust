@@ -1,0 +1,31 @@
+
+<div class="relative overflow-x-auto pb-8">
+    <table class="w-full text-sm text-left text-gray-400 bg-black rounded-lg shadow-md mt-5">
+        <thead class="text-xs text-white uppercase">
+            <tr>
+                <th class="px-6 py-3 border-b border-yellow-500">Show</th>
+                <th class="px-6 py-3 border-b border-yellow-500">Latest Episode</th>
+                <th class="px-6 py-3 border-b border-yellow-500">Next Air Date</th>
+                <th class="px-9 py-3 border-b border-yellow-500">Action</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for i in 0..5 %}
+            <tr class="hover:bg-gray-900">
+                <td scope="row" class="px-6 py-4 font-medium text-white border-b border-gray-800">Mahou Shoujo Madoka☆Magica: Walpurgis no Kaiten</td>
+                <td class="px-6 py-4 text-white border-b border-gray-800">Episode 1</td>
+                <td class="px-6 py-4 text-white border-b border-gray-800">Oct 3, 2024</td>
+                <td class="px-6 py-4 border-b border-gray-800">
+                    <button
+                        class="bg-yellow-500 px-3 py-1 text-black rounded-md shadow-sm transition-colors hover:bg-black hover:text-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-500">
+                        Remove
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+            <!-- More rows... -->
+        </tbody>
+    </table>
+</div>
+
