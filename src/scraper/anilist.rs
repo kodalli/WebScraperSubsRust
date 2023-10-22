@@ -46,6 +46,47 @@ query ($season: MediaSeason, $seasonYear: Int){
 }
 ";
 
+const CURRENTLY_AIRING: &str = "
+query {
+  Page {
+    media (status: RELEASING, type: ANIME) {
+      id
+      title {
+        romaji
+        english
+        native
+      }
+      description
+      episodes
+      duration
+      averageScore
+      meanScore
+      popularity
+      genres
+      studios (isMain: true) {
+          nodes {
+              name
+          }
+      }
+      coverImage {
+          medium
+          large
+          extraLarge
+      }
+      startDate {
+          year
+          month
+          day
+      }
+      nextAiringEpisode {
+          episode
+          airingAt
+      }
+    }
+  }
+}
+";
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct AniShow {
     pub id: Option<u32>,
@@ -270,6 +311,24 @@ pub async fn get_anilist_data(season: Season, year: u16) -> anyhow::Result<Vec<A
     let client = Client::new();
     // Define query and variables
     let json = json!({"query": SEASONAL, "variables": {"season": season, "seasonYear": year}});
+    let resp = client
+        .post("https://graphql.anilist.co/")
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
+        .body(json.to_string())
+        .send()
+        .await?;
+    let text_resp = resp.text().await?;
+    //println!("{}", text_resp);
+    let result: Response = serde_json::from_str(&text_resp)?;
+
+    Ok(result.data.page.media)
+}
+
+pub async fn get_anilist_all_airing() -> anyhow::Result<Vec<AniShow>> {
+    let client = Client::new();
+    // Define query and variables
+    let json = json!({"query": CURRENTLY_AIRING});
     let resp = client
         .post("https://graphql.anilist.co/")
         .header("Content-Type", "application/json")

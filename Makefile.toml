@@ -5,7 +5,7 @@ PORT = 42069
 env = { "RUST_ENV" = "development", "PORT" = "${PORT}" }
 install_crate = "cargo-watch"
 command = "cargo"
-args = ["watch" , "-x", "run"]
+args = ["watch", "--ignore", "tracked_shows.json", "-x", "run"]
 
 [tasks.styles]
 command = "pnpm"

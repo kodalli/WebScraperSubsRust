@@ -2,6 +2,7 @@ use anyhow::{self, Ok};
 use reqwest;
 use scraper::{Html, Selector};
 
+#[derive(Debug)]
 pub struct Torrent {
     title: Option<String>,
     view: Option<String>,
@@ -86,6 +87,10 @@ pub fn parse_nyaa(request_text: String) -> Vec<Torrent> {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+
+    use crate::pages::home::{read_tracked_shows, TableEntry};
+
     use super::*;
 
     #[ignore]
@@ -100,6 +105,7 @@ mod test {
         assert!(parsed.len() > 0);
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_nyaa_erai_raws() {
         let keyword = "One Piece";
@@ -108,6 +114,30 @@ mod test {
             get_torrents_from_nyaa(keyword, user, Some(2), None, None, None, None, None).await;
         assert!(request_text.is_ok());
         let parsed = parse_nyaa(request_text.unwrap());
+        assert!(parsed.len() > 0);
+    }
+
+    #[tokio::test]
+    async fn test_nyaa_subsplease_json() {
+        let map = match read_tracked_shows().await {
+            anyhow::Result::Ok(map) => map,
+            Err(err) => {
+                eprintln!("{:?}", err);
+                HashMap::new()
+            }
+        };
+        let shows: Vec<&TableEntry> = map.values().collect();
+        let keyword = shows.get(0).unwrap().title.as_str();
+        //let user = Some("Erai-raws");
+        let user = Some("subsplease");
+        let request_text =
+            get_torrents_from_nyaa(keyword, user, None, None, None, None, None, None).await;
+        assert!(request_text.is_ok());
+        //println!("{}", request_text.as_ref().unwrap());
+        let parsed = parse_nyaa(request_text.unwrap());
+        let titles: Vec<&String> = parsed.iter().map(|f| f.title.as_ref().unwrap()).collect();
+        println!("{:?}", titles);
+        println!("show: {}", keyword);
         assert!(parsed.len() > 0);
     }
 }

@@ -1,6 +1,8 @@
 use crate::{
     pages::{filters, HtmlTemplate},
-    scraper::anilist::{get_anilist_data, AniShow, Season, NextAiringEpisode},
+    scraper::anilist::{
+        get_anilist_all_airing, get_anilist_data, AniShow, NextAiringEpisode, Season,
+    },
 };
 use anyhow::Ok;
 use askama::Template;
@@ -9,11 +11,11 @@ use axum::{
     response::{Html, IntoResponse},
     Form,
 };
-use chrono::{Datelike, Utc, NaiveDateTime};
+use chrono::{Datelike, NaiveDateTime, Utc};
 use core::fmt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, fs::File, io::{AsyncReadExt, AsyncWriteExt}};
 
 #[derive(Deserialize)]
 pub struct UserState {
@@ -30,11 +32,11 @@ pub struct SeasonalAnimeQuery {
 }
 
 impl UserState {
-    pub fn new(user: String) -> Self {
+    pub fn new(user: String, tracker: HashMap<u32, TableEntry>) -> Self {
         let (season, year) = current_year_and_season();
         Self {
             user,
-            tracker: HashMap::new(),
+            tracker,
             season,
             year,
         }
@@ -77,13 +79,13 @@ pub struct TableTemplate {
     shows: Vec<TableEntry>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct TableEntry {
-    title: String,
-    latest_episode: String,
-    next_air_date: String,
-    is_tracked: bool,
-    id: u32,
+    pub title: String,
+    pub latest_episode: String,
+    pub next_air_date: String,
+    pub is_tracked: bool,
+    pub id: u32,
 }
 
 #[derive(Template)]
@@ -101,6 +103,16 @@ pub struct TrackedTableTemplate {
 
 async fn get_seasonal(season: Season, year: u16) -> anyhow::Result<Vec<AniShow>> {
     match get_anilist_data(season, year).await {
+        std::result::Result::Ok(res) => Ok(res),
+        std::result::Result::Err(err) => {
+            println!("Failed to fetch seasonal anime. Error: {}", err);
+            Ok(Vec::new())
+        }
+    }
+}
+
+async fn get_currently_airing() -> anyhow::Result<Vec<AniShow>> {
+    match get_anilist_all_airing().await {
         std::result::Result::Ok(res) => Ok(res),
         std::result::Result::Err(err) => {
             println!("Failed to fetch seasonal anime. Error: {}", err);
@@ -181,11 +193,16 @@ fn get_next_airing_episode(next_airing_episode: &Option<NextAiringEpisode>) -> (
         None => return ("N/A".into(), "N/A".into()),
     };
 
-    let episode = nae.episode.map_or_else(|| "N/A".to_string(), |e| format!("Episode {}", e));
-    let air_date = nae.airing_at.map_or_else(|| "N/A".to_string(), |d| match NaiveDateTime::from_timestamp_opt(d, 0) {
-        Some(date) => format!("{}", date),
-        None => "N/A".into(),
-    });
+    let episode = nae
+        .episode
+        .map_or_else(|| "N/A".to_string(), |e| format!("Episode {}", e));
+    let air_date = nae.airing_at.map_or_else(
+        || "N/A".to_string(),
+        |d| match NaiveDateTime::from_timestamp_opt(d, 0) {
+            Some(date) => format!("{}", date),
+            None => "N/A".into(),
+        },
+    );
 
     (episode, air_date)
 }
@@ -199,7 +216,8 @@ fn build_card_templates(shows: &[AniShow], lock: &UserState) -> Vec<CardTemplate
             });
 
             let tracked = lock.tracker.get(&show.id.unwrap()).is_some();
-            let (latest_episode, next_air_date) = get_next_airing_episode(&show.next_airing_episode);
+            let (latest_episode, next_air_date) =
+                get_next_airing_episode(&show.next_airing_episode);
 
             CardTemplate {
                 show: show.clone(),
@@ -275,6 +293,19 @@ pub async fn navigate_seasonal_anime(
 }
 
 #[axum::debug_handler]
+pub async fn currently_airing_anime(
+    State(state): State<Arc<Mutex<UserState>>>,
+) -> impl IntoResponse {
+    let lock = state.lock().await;
+    let cards: Vec<AniShow> = get_currently_airing().await.unwrap_or_default();
+    let card_templates: Vec<CardTemplate> = build_card_templates(&cards, &lock);
+    let grid = GridTemplate {
+        cards: card_templates,
+    };
+    HtmlTemplate::new(grid)
+}
+
+#[axum::debug_handler]
 pub async fn update_user(
     State(state): State<Arc<Mutex<UserState>>>,
     Form(payload): Form<UserState>,
@@ -283,6 +314,26 @@ pub async fn update_user(
     lock.user = payload.user.to_string();
 
     Html(format!("{}", payload.user))
+}
+
+pub async fn read_tracked_shows() -> anyhow::Result<HashMap<u32, TableEntry>> {
+    let mut file = File::open("tracked_shows.json").await?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).await?;
+    match serde_json::from_slice(&buffer) {
+        anyhow::Result::Ok(map) => Ok(map),
+        Err(err) => {
+            println!("Failed to read tracked shows from json: {:?}", err);
+            Ok(HashMap::new())
+        },
+    }
+}
+
+async fn save_tracked_shows(tracker: &HashMap<u32, TableEntry>) -> anyhow::Result<()> {
+    let json_data = serde_json::to_string(tracker).expect("Failed to serialize hashmap");
+    let mut file = File::create("tracked_shows.json").await?;
+    file.write_all(json_data.as_bytes()).await?;
+    Ok(())
 }
 
 #[axum::debug_handler]
@@ -294,12 +345,17 @@ pub async fn set_tracker(
     let mut new_payload = payload.clone();
     new_payload.is_tracked = !new_payload.is_tracked;
     if new_payload.is_tracked {
-        lock.tracker
-            .insert(new_payload.id, new_payload.clone());
+        lock.tracker.insert(new_payload.id, new_payload.clone());
     } else {
         lock.tracker.remove(&new_payload.id);
     }
     let template = TrackedTemplate { entry: new_payload };
+
+    // Save the updated tracker hashmap to a JSON file
+    match save_tracked_shows(&lock.tracker).await {
+        anyhow::Result::Ok(_) =>  {},
+        Err(err) => eprintln!("Could not save hashmap to json: {:?}", err),
+    }
 
     HtmlTemplate::new(template).with_header("HX-Trigger", "newTrackerStatus")
 }

@@ -5,15 +5,24 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use anyhow::{self, Context};
-use axum::{routing::{get, post}, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
+use pages::{
+    anime::seasonal_anime,
+    home::{
+        currently_airing_anime, navigate_seasonal_anime, set_tracker, show_table, update_user,
+        view, UserState,
+    },
+};
 use scraper::subsplease::get_magnet_links_from_subsplease;
 use scraper::transmission::upload_to_transmission_rpc;
 use tower_http::services::ServeDir;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use pages::{home::{UserState, view, update_user, set_tracker, navigate_seasonal_anime, show_table}, anime::seasonal_anime};
-use pages::fortune::fortune;
 
+use crate::pages::home::read_tracked_shows;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -39,7 +48,10 @@ async fn main() -> anyhow::Result<()> {
     info!("router initalized, now listening on port {}", port);
 
     let state = AppState {
-        user: Arc::new(Mutex::new(UserState::new("Yeehaw".to_string()))),
+        user: Arc::new(Mutex::new(UserState::new(
+            "Yeehaw".to_string(),
+            read_tracked_shows().await?,
+        ))),
     };
 
     axum::Server::bind(&addr)
@@ -56,11 +68,24 @@ struct AppState {
 
 fn api_router(state: AppState) -> Router {
     // clone on arc just increases reference count
-    Router::new().route("/login", post(update_user).with_state(state.user.clone()))
-        .route("/set_tracker", post(set_tracker).with_state(state.user.clone()))
-        .route("/show_table", get(show_table).with_state(state.user.clone()))
-        .route("/navigate_seasonal_anime", get(navigate_seasonal_anime).with_state(state.user.clone()))
-        .route("/fortune", get(fortune))
+    Router::new()
+        .route("/login", post(update_user).with_state(state.user.clone()))
+        .route(
+            "/set_tracker",
+            post(set_tracker).with_state(state.user.clone()),
+        )
+        .route(
+            "/show_table",
+            get(show_table).with_state(state.user.clone()),
+        )
+        .route(
+            "/navigate_seasonal_anime",
+            get(navigate_seasonal_anime).with_state(state.user.clone()),
+        )
+        .route(
+            "/currently_airing",
+            get(currently_airing_anime).with_state(state.user.clone()),
+        )
         .route("/anime", get(seasonal_anime))
 }
 
@@ -73,10 +98,14 @@ fn router(state: AppState) -> anyhow::Result<Router> {
 
     Ok(Router::new()
         .route("/", get(view).with_state(state.user.clone()))
-        .nest("/api", api_router(AppState { user: state.user.clone() }))
+        .nest(
+            "/api",
+            api_router(AppState {
+                user: state.user.clone(),
+            }),
+        )
         .nest_service("/assets", assets_serve_dir))
 }
-
 
 //#[tokio::main]
 //async fn main() -> Result<()> {
