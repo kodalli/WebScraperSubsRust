@@ -1,4 +1,4 @@
-use crate::scraper::anilist::{AniShow, CoverImage, Studio, Title};
+use crate::scraper::{anilist::{AniShow, CoverImage, Studio, Title}, nyaasi::Link};
 
 pub fn unwrap_or_na<T: std::fmt::Display>(value: &Option<T>) -> ::askama::Result<String> {
     Ok(value.as_ref().map_or("N/A".to_string(), |v| v.to_string()))
@@ -68,4 +68,14 @@ pub fn unwrap_members(show: &AniShow) -> ::askama::Result<String> {
 
 pub fn escape_quotes(text: &str) -> ::askama::Result<String> {
     Ok(text.replace("\"", "\\\""))
+}
+
+pub fn get_url(link: &Link) -> ::askama::Result<String> {
+    let res = match (link.magnet_link.as_ref(), link.torrent_link.as_ref()) {
+        (None, None) => "".to_string(),
+        (None, Some(tor)) => tor.to_string(),
+        (Some(mag), None) => mag.to_string(),
+        (Some(mag), Some(_)) => mag.to_string(),
+    };
+    Ok(res)
 }

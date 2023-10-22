@@ -12,8 +12,8 @@ use axum::{
 use pages::{
     anime::seasonal_anime,
     home::{
-        currently_airing_anime, navigate_seasonal_anime, set_tracker, show_table, update_user,
-        view, UserState,
+        currently_airing_anime, get_source, navigate_seasonal_anime, set_tracker, show_table,
+        update_user, view, UserState, download_from_link, search_source,
     },
 };
 use scraper::subsplease::get_magnet_links_from_subsplease;
@@ -75,6 +75,14 @@ fn api_router(state: AppState) -> Router {
             post(set_tracker).with_state(state.user.clone()),
         )
         .route(
+            "/download_from_link",
+            post(download_from_link),
+        )
+        .route(
+            "/search_source",
+            post(search_source),
+        )
+        .route(
             "/show_table",
             get(show_table).with_state(state.user.clone()),
         )
@@ -85,6 +93,10 @@ fn api_router(state: AppState) -> Router {
         .route(
             "/currently_airing",
             get(currently_airing_anime).with_state(state.user.clone()),
+        )
+        .route(
+            "/get_source",
+            get(get_source).with_state(state.user.clone()),
         )
         .route("/anime", get(seasonal_anime))
 }
@@ -150,7 +162,7 @@ mod test {
     #[tokio::test]
     async fn test_scrape_subs_and_upload_batch_true() {
         let sp_title = "Sousou no Frieren".to_string();
-        let season_number = 1;
+        let season_number = Some(1);
         let batch = true;
         let magnet_links = get_magnet_links_from_subsplease(&sp_title, batch, 4444).await;
         assert!(magnet_links.is_ok());
@@ -162,7 +174,7 @@ mod test {
     #[tokio::test]
     async fn test_scrape_subs_and_upload_batch_false() {
         let sp_title = "Sousou no Frieren".to_string();
-        let season_number = 1;
+        let season_number = Some(1);
         let batch = false;
         let magnet_links = get_magnet_links_from_subsplease(&sp_title, batch, 4445).await;
         assert!(magnet_links.is_ok());

@@ -2,33 +2,39 @@
 
     <div class="grid md:grid-cols-4 gap-6">
         <!-- Form -->
+
         <div class="md:col-span-1 pt-8">
             <h2 class="text-lg text-center text-yellow-500 mb-14">
                 {{ keyword }}
             </h2>
-            <div class="relative z-0 w-full mb-12 group">
-                <input type="text" name="keword" id="keword"
-                    class="block py-2.5 px-3 w-full text-sm text-white bg-transparent border-b border-yellow-500 appearance-none dark:focus:border-yellow-500 focus:outline-none focus:ring-0 focus:border-yellow-500 peer"
-                    placeholder=" " required />
-                <label for="keyword"
-                    class="peer-focus:font-medium absolute text-sm text-yellow-300 duration-300 transform -translate-y-6 scale-75 top-3 -z-10 origin-[0] peer-focus:left-0 peer-focus:text-yellow-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-6">keyword</label>
-            </div>
 
-            <div class="relative w-full mb-12 group">
-                <label for="source" class="block mb-2 text-sm font-medium text-yellow-500">Select your
-                    source</label>
-                <select id="source"
-                    class="bg-black border border-yellow-500 text-yellow-300 text-sm rounded-lg focus:ring-yellow-500 focus:border-yellow-500 block w-full p-2.5">
-                    <option>subsplease</option>
-                    <option>Erai-raws</option>
-                </select>
-            </div>
+            <!-- Wrapping the input elements inside a form -->
+            <form hx-post="api/search_source" hx-target="#source-table" hx-indicator="#source-spinner">
+                <div class="relative z-0 w-full mb-12 group">
+                    <input type="text" name="keyword" id="keyword"
+                        class="block py-2.5 px-3 w-full text-sm text-white bg-transparent border-b border-yellow-500 appearance-none dark:focus:border-yellow-500 focus:outline-none focus:ring-0 focus:border-yellow-500 peer"
+                        placeholder=" " required />
+                    <label for="keyword"
+                        class="peer-focus:font-medium absolute text-sm text-yellow-300 duration-300 transform -translate-y-6 scale-75 top-3 -z-10 origin-[0] peer-focus:left-0 peer-focus:text-yellow-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-6">keyword</label>
+                </div>
 
-            <button
-                class="w-full bg-yellow-500 px-3 py-1 text-black rounded-md shadow-sm transition-colors hover:border-yellow-500 hover:bg-black hover:text-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-500">
-                Search
-            </button>
+                <div class="relative w-full mb-12 group">
+                    <label for="source" class="block mb-2 text-sm font-medium text-yellow-500">Select your
+                        source</label>
+                    <select name="source" id="source"
+                        class="bg-black border border-yellow-500 text-yellow-300 text-sm rounded-lg focus:ring-yellow-500 focus:border-yellow-500 block w-full p-2.5">
+                        <option value="subsplease">subsplease</option>
+                        <option value="Erai-raws">Erai-raws</option>
+                    </select>
+                </div>
+
+                <button type="submit"
+                    class="w-full bg-yellow-500 px-3 py-1 text-black rounded-md shadow-sm transition-colors hover:border-yellow-500 hover:bg-black hover:text-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-500">
+                    Search
+                </button>
+            </form>
         </div>
+
 
         <!-- Table -->
         <div class="md:col-span-3 relative overflow-x-auto pb-8 mt-5 max-h-[350px]">
@@ -44,10 +50,11 @@
                 <tbody>
                     {% for link in links %}
                     <tr class="hover:bg-gray-900">
-                        <td scope="row" class="py-4 font-medium text-yellow-300 border-b border-gray-800 truncate ...">{{ title }}</td>
+                        <td scope="row" class="py-4 font-medium text-yellow-300 border-b border-gray-800 truncate ...">
+                            {{ link.title }}</td>
                         <td class="pl-80 py-4 text-yellow-300 border-b border-gray-800">Episode {{ link.episode }}</td>
                         <td class="pr-28 flex justify-end py-4 border-b border-gray-800">
-                            <button
+                            <button hx-post="api/download_from_link?season=1&url={{ link|get_url }}&title={{ link.title }}"
                                 class="bg-yellow-500 px-3 py-1 text-black rounded-md shadow-sm transition-colors hover:bg-black hover:text-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-500">
                                 Download
                             </button>

@@ -3,7 +3,7 @@ use anyhow::{anyhow, Ok, Result};
 pub async fn upload_to_transmission_rpc(
     links: Vec<String>,
     show_name: &str,
-    season_number: u8,
+    season_number: Option<u8>,
 ) -> Result<()> {
     let url = "http://192.168.86.71:9091/transmission/rpc";
 
@@ -18,7 +18,11 @@ pub async fn upload_to_transmission_rpc(
 
     println!("Recieved session_id from transmission");
 
-    let destination_folder = format!("/data/Anime/{}/Season {}/", show_name, season_number);
+
+    let destination_folder = match season_number {
+        Some(season) => format!("/data/Anime/{}/Season {}/", show_name, season),
+        None => format!("/data/Anime/{}/", show_name),
+    };
 
     let count = links.len();
     for magnet_link in links {

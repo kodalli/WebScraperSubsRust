@@ -9,6 +9,7 @@
             </p>
         </div>
 
+
         <div class="container mx-auto">
             <div id="nav-bar">
                 {{ navbar|safe }}
@@ -16,6 +17,10 @@
 
             <div id="show-table" hx-get="/api/show_table" hx-trigger="newTrackerStatus from:body">
                 {{ table|safe }}
+            </div>
+
+            <div id="source-spinner" class="htmx-indicator" style="display:none;">
+                <iframe src="https://gifer.com/embed/PVtR" width=480 height=360.000 frameBorder="0"></iframe>
             </div>
 
             <div id="source-table"></div>

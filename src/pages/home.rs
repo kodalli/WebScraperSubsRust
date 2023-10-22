@@ -1,8 +1,9 @@
 use crate::{
     pages::{filters, HtmlTemplate},
-    scraper::{anilist::{
-        get_anilist_all_airing, get_anilist_data, AniShow, NextAiringEpisode, Season,
-    }, nyaasi::Link},
+    scraper::{
+        anilist::{get_anilist_all_airing, get_anilist_data, AniShow, NextAiringEpisode, Season},
+        nyaasi::{fetch_sources, Link}, transmission::upload_to_transmission_rpc,
+    },
 };
 use anyhow::Ok;
 use askama::Template;
@@ -15,7 +16,11 @@ use chrono::{Datelike, NaiveDateTime, Utc};
 use core::fmt;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
-use tokio::{sync::Mutex, fs::File, io::{AsyncReadExt, AsyncWriteExt}};
+use tokio::{
+    fs::File,
+    io::{AsyncReadExt, AsyncWriteExt},
+    sync::Mutex,
+};
 
 #[derive(Deserialize)]
 pub struct UserState {
@@ -33,7 +38,20 @@ pub struct SeasonalAnimeQuery {
 
 #[derive(Deserialize)]
 pub struct AnimeIdQuery {
-    pub id: u64,
+    pub id: u32,
+}
+
+#[derive(Deserialize)]
+pub struct AnimeKeywordQuery {
+    pub keyword: String,
+    pub source: String,
+}
+
+#[derive(Deserialize)]
+pub struct DownloadAnimeQuery {
+    pub title: String,
+    pub url: String,
+    pub season: Option<u8>,
 }
 
 impl UserState {
@@ -109,7 +127,6 @@ pub struct TrackedTableTemplate {
 #[derive(Template)]
 #[template(path = "components/source_table.html")]
 pub struct SourceTableTemplate {
-    pub title: String,
     pub keyword: String,
     pub links: Vec<Link>,
 }
@@ -338,7 +355,7 @@ pub async fn read_tracked_shows() -> anyhow::Result<HashMap<u32, TableEntry>> {
         Err(err) => {
             println!("Failed to read tracked shows from json: {:?}", err);
             Ok(HashMap::new())
-        },
+        }
     }
 }
 
@@ -366,7 +383,7 @@ pub async fn set_tracker(
 
     // Save the updated tracker hashmap to a JSON file
     match save_tracked_shows(&lock.tracker).await {
-        anyhow::Result::Ok(_) =>  {},
+        anyhow::Result::Ok(_) => {}
         Err(err) => eprintln!("Could not save hashmap to json: {:?}", err),
     }
 
@@ -386,12 +403,55 @@ pub async fn show_table(State(state): State<Arc<Mutex<UserState>>>) -> impl Into
 #[axum::debug_handler]
 pub async fn get_source(
     State(state): State<Arc<Mutex<UserState>>>,
-    Query(payload): Query<TableEntry>,
+    Query(payload): Query<AnimeIdQuery>,
 ) -> impl IntoResponse {
+    println!("Get Source!");
     let lock = state.lock().await;
-
-    let template = TableTemplate {
-        shows: lock.tracker.values().cloned().collect(),
+    let show = lock.tracker.get(&payload.id);
+    let title = &show.unwrap().title;
+    let links = match fetch_sources(title, "subsplease").await {
+        anyhow::Result::Ok(val) => val,
+        Err(err) => {
+            println!("Couldn't fetch source for {}, {:?}", title, err);
+            Vec::new()
+        }
+    };
+    let template = SourceTableTemplate {
+        keyword: title.clone(),
+        links,
     };
     HtmlTemplate::new(template)
+}
+
+#[axum::debug_handler]
+pub async fn search_source(
+    Form(payload): Form<AnimeKeywordQuery>,
+) -> impl IntoResponse {
+    println!("Search!");
+    let links = match fetch_sources(&payload.keyword, &payload.source).await {
+        anyhow::Result::Ok(val) => val,
+        Err(err) => {
+            println!("Couldn't fetch source for {}, {:?}", &payload.keyword, err);
+            Vec::new()
+        }
+    };
+    let template = SourceTableTemplate {
+        keyword: payload.keyword.clone(),
+        links,
+    };
+    HtmlTemplate::new(template)
+}
+
+#[axum::debug_handler]
+pub async fn download_from_link(
+    Query(payload): Query<DownloadAnimeQuery>,
+) -> impl IntoResponse {
+    let links = vec![payload.url];
+    let show_name = &payload.title;
+    let season_number = payload.season;
+    match upload_to_transmission_rpc(links, show_name, season_number).await {
+        anyhow::Result::Ok(_) => println!("Successful Download! {}", show_name),
+        Err(err) => eprintln!("Failed to download {:?}", err)
+    };
+    Html("Done")
 }

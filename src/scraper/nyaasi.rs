@@ -88,6 +88,7 @@ pub fn parse_nyaa(request_text: String) -> Vec<Torrent> {
 
 #[derive(Deserialize, Debug)]
 pub struct Link {
+    pub title: String,
     pub episode: String,
     pub magnet_link: Option<String>,
     pub torrent_link: Option<String>,
@@ -116,6 +117,7 @@ pub async fn fetch_sources(keyword: &str, user: &str) -> anyhow::Result<Vec<Link
             p.title.as_ref().and_then(|t| {
                 let (title, episode) = extract_show_info(&t);
                 Some(Link {
+                    title: title.to_string(),
                     episode: episode.to_string(),
                     torrent_link: p.torrent.clone(),
                     magnet_link: p.magnet.clone(),
