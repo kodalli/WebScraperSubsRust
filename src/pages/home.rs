@@ -18,7 +18,7 @@ use tokio::sync::Mutex;
 #[derive(Deserialize)]
 pub struct UserState {
     pub user: String,
-    pub tracker: HashMap<String, TableEntry>,
+    pub tracker: HashMap<u32, TableEntry>,
     pub season: Season,
     pub year: u16,
 }
@@ -182,11 +182,8 @@ fn build_card_templates(shows: &[AniShow], lock: &UserState) -> Vec<CardTemplate
             let title = show.title.as_ref().map_or("N/A".into(), |t| {
                 t.romaji.as_deref().unwrap_or("N/A").into()
             });
-            let tracked = show.title.as_ref().map_or(false, |t| {
-                t.romaji
-                    .as_ref()
-                    .map_or(false, |t1| lock.tracker.get(t1).is_some())
-            });
+
+            let tracked = lock.tracker.get(&show.id.unwrap()).is_some();
 
             CardTemplate {
                 show: show.clone(),
@@ -284,9 +281,9 @@ pub async fn set_tracker(
     new_payload.is_tracked = !new_payload.is_tracked;
     if new_payload.is_tracked {
         lock.tracker
-            .insert(new_payload.title.clone(), new_payload.clone());
+            .insert(new_payload.id, new_payload.clone());
     } else {
-        lock.tracker.remove(&new_payload.title);
+        lock.tracker.remove(&new_payload.id);
     }
     let template = TrackedTemplate { entry: new_payload };
 

@@ -1,3 +1,13 @@
+<script>
+
+    function handleRemoveClick(button) {
+        let targetId = "#tracker-" + button.getAttribute("data-show-id");
+        if (!document.querySelector(targetId)) {
+            button.removeAttribute('hx-target');
+        }
+    }
+
+</script>
 <div class="relative overflow-x-auto pb-8">
     <table class="w-full text-sm text-left text-gray-400 bg-black rounded-lg shadow-md mt-5">
         <thead class="text-xs text-white uppercase">
@@ -18,9 +28,9 @@
                 <td class="px-6 py-4 text-white border-b border-gray-800">{{ show.next_air_date }}</td>
                 <td class="px-6 py-4 border-b border-gray-800">
                     <button
+                        onclick="handleRemoveClick(this)"
                         hx-post="/api/set_tracker?id={{ show.id }}&latest_episode={{ show.latest_episode }}&next_air_date={{ show.next_air_date }}&is_tracked={{ show.is_tracked }}&title={{ show.title|escape_quotes }}"
-                        hx-target="#tracker-{{ show.id }}"
-                        hx-swap="outerHTML"
+                        hx-target="#tracker-{{ show.id }}" hx-swap="outerHTML"
                         class="bg-yellow-500 px-3 py-1 text-black rounded-md shadow-sm transition-colors hover:bg-black hover:text-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-500">
                         Remove
                     </button>
