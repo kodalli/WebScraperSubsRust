@@ -1,6 +1,7 @@
 use anyhow::{self, Ok};
 use reqwest;
 use scraper::{Html, Selector};
+use serde::Deserialize;
 
 #[derive(Debug)]
 pub struct Torrent {
@@ -85,6 +86,47 @@ pub fn parse_nyaa(request_text: String) -> Vec<Torrent> {
     return torrents;
 }
 
+#[derive(Deserialize, Debug)]
+pub struct Link {
+    pub episode: String,
+    pub magnet_link: Option<String>,
+    pub torrent_link: Option<String>,
+}
+
+fn extract_show_info(title: &str) -> (&str, &str) {
+    let re = regex::Regex::new(r"\[.*?\] (.*?) - (\d+)").unwrap();
+
+    if let Some(captures) = re.captures(title) {
+        let show_title = captures.get(1).map_or("N/A", |m| m.as_str());
+        let episode_number = captures.get(2).map_or("N/A", |m| m.as_str());
+        return (show_title, episode_number);
+    }
+
+    ("N/A", "N/A")
+}
+
+pub async fn fetch_sources(keyword: &str, user: &str) -> anyhow::Result<Vec<Link>> {
+    let request_text =
+        get_torrents_from_nyaa(keyword, Some(user), None, None, None, None, None, None).await?;
+    let parsed = parse_nyaa(request_text);
+
+    let links = parsed
+        .iter()
+        .filter_map(|p| {
+            p.title.as_ref().and_then(|t| {
+                let (title, episode) = extract_show_info(&t);
+                Some(Link {
+                    episode: episode.to_string(),
+                    torrent_link: p.torrent.clone(),
+                    magnet_link: p.magnet.clone(),
+                })
+            })
+        })
+        .collect::<Vec<Link>>();
+
+    Ok(links)
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
@@ -117,6 +159,7 @@ mod test {
         assert!(parsed.len() > 0);
     }
 
+    #[ignore]
     #[tokio::test]
     async fn test_nyaa_subsplease_json() {
         let map = match read_tracked_shows().await {
@@ -139,5 +182,17 @@ mod test {
         println!("{:?}", titles);
         println!("show: {}", keyword);
         assert!(parsed.len() > 0);
+    }
+
+    #[test]
+    fn test_parse_title_episode() {
+        let title1 = "[SubsPlease] One Piece - 1060 (1080p) [37A98D45].mkv";
+        let title2 = "[Erai-raws] Goblin Slayer II - 03 [1080p][Multiple Subtitle] [ENG][POR-BR][SPA-LA][RUS]";
+
+        let res1 = extract_show_info(title1);
+        let res2 = extract_show_info(title2);
+
+        println!("{:?}", res1);
+        println!("{:?}", res2);
     }
 }

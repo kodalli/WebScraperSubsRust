@@ -1,8 +1,8 @@
 use crate::{
     pages::{filters, HtmlTemplate},
-    scraper::anilist::{
+    scraper::{anilist::{
         get_anilist_all_airing, get_anilist_data, AniShow, NextAiringEpisode, Season,
-    },
+    }, nyaasi::Link},
 };
 use anyhow::Ok;
 use askama::Template;
@@ -29,6 +29,11 @@ pub struct UserState {
 pub struct SeasonalAnimeQuery {
     pub season: String,
     pub year: u16,
+}
+
+#[derive(Deserialize)]
+pub struct AnimeIdQuery {
+    pub id: u64,
 }
 
 impl UserState {
@@ -99,6 +104,14 @@ pub struct TrackedTemplate {
 pub struct TrackedTableTemplate {
     entry: TableEntry,
     pub table: TableTemplate,
+}
+
+#[derive(Template)]
+#[template(path = "components/source_table.html")]
+pub struct SourceTableTemplate {
+    pub title: String,
+    pub keyword: String,
+    pub links: Vec<Link>,
 }
 
 async fn get_seasonal(season: Season, year: u16) -> anyhow::Result<Vec<AniShow>> {
@@ -362,6 +375,19 @@ pub async fn set_tracker(
 
 #[axum::debug_handler]
 pub async fn show_table(State(state): State<Arc<Mutex<UserState>>>) -> impl IntoResponse {
+    let lock = state.lock().await;
+
+    let template = TableTemplate {
+        shows: lock.tracker.values().cloned().collect(),
+    };
+    HtmlTemplate::new(template)
+}
+
+#[axum::debug_handler]
+pub async fn get_source(
+    State(state): State<Arc<Mutex<UserState>>>,
+    Query(payload): Query<TableEntry>,
+) -> impl IntoResponse {
     let lock = state.lock().await;
 
     let template = TableTemplate {

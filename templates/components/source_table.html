@@ -1,10 +1,10 @@
-<div id="source-table" class="pb-5">
+<div class="pb-5">
 
     <div class="grid md:grid-cols-4 gap-6">
         <!-- Form -->
         <div class="md:col-span-1 pt-8">
             <h2 class="text-lg text-center text-yellow-500 mb-14">
-                ONE PIECE
+                {{ keyword }}
             </h2>
             <div class="relative z-0 w-full mb-12 group">
                 <input type="text" name="keword" id="keword"
@@ -42,12 +42,10 @@
                 </thead>
 
                 <tbody>
-                    {% for i in 0..5 %}
+                    {% for link in links %}
                     <tr class="hover:bg-gray-900">
-                        <td scope="row" class="py-4 font-medium text-yellow-300 border-b border-gray-800 truncate ...">
-                            One
-                            Piece</td>
-                        <td class="pl-80 py-4 text-yellow-300 border-b border-gray-800">Episode {{ i }}</td>
+                        <td scope="row" class="py-4 font-medium text-yellow-300 border-b border-gray-800 truncate ...">{{ title }}</td>
+                        <td class="pl-80 py-4 text-yellow-300 border-b border-gray-800">Episode {{ link.episode }}</td>
                         <td class="pr-28 flex justify-end py-4 border-b border-gray-800">
                             <button
                                 class="bg-yellow-500 px-3 py-1 text-black rounded-md shadow-sm transition-colors hover:bg-black hover:text-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-500">

@@ -21,7 +21,7 @@
 
         <tbody>
             {% for show in shows %}
-            <tr class="hover:bg-gray-900">
+            <tr class="hover:bg-gray-900 cursor-pointer" hx-get="/api/get_source?id={{ show.id }}" hx-trigger="click" hx-target="source-table">
                 <td scope="row" class="px-6 py-4 font-medium text-white border-b border-gray-800 truncate ...">{{
                     show.title }}</td>
                 <td class="px-6 py-4 text-white border-b border-gray-800">{{ show.latest_episode }}</td>
