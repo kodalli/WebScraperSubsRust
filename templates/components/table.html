@@ -1,7 +1,7 @@
 <script>
 
     function handleRemoveClick(button) {
-        let targetId = "#tracker-" + button.getAttribute("data-show-id");
+        let targetId = button.getAttribute("hx-target");
         if (!document.querySelector(targetId)) {
             button.removeAttribute('hx-target');
         }
