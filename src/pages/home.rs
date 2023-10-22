@@ -1,6 +1,6 @@
 use crate::{
     pages::{filters, HtmlTemplate},
-    scraper::anilist::{get_anilist_data, AniShow, Season},
+    scraper::anilist::{get_anilist_data, AniShow, Season, NextAiringEpisode},
 };
 use anyhow::Ok;
 use askama::Template;
@@ -9,7 +9,7 @@ use axum::{
     response::{Html, IntoResponse},
     Form,
 };
-use chrono::{Datelike, Utc};
+use chrono::{Datelike, Utc, NaiveDateTime};
 use core::fmt;
 use serde::Deserialize;
 use std::{collections::HashMap, sync::Arc};
@@ -175,6 +175,21 @@ fn get_seasons_around(season: Season, year: u16) -> Vec<(Season, u16)> {
     seasons
 }
 
+fn get_next_airing_episode(next_airing_episode: &Option<NextAiringEpisode>) -> (String, String) {
+    let nae = match next_airing_episode {
+        Some(ep) => ep,
+        None => return ("N/A".into(), "N/A".into()),
+    };
+
+    let episode = nae.episode.map_or_else(|| "N/A".to_string(), |e| format!("Episode {}", e));
+    let air_date = nae.airing_at.map_or_else(|| "N/A".to_string(), |d| match NaiveDateTime::from_timestamp_opt(d, 0) {
+        Some(date) => format!("{}", date),
+        None => "N/A".into(),
+    });
+
+    (episode, air_date)
+}
+
 fn build_card_templates(shows: &[AniShow], lock: &UserState) -> Vec<CardTemplate> {
     shows
         .iter()
@@ -184,16 +199,15 @@ fn build_card_templates(shows: &[AniShow], lock: &UserState) -> Vec<CardTemplate
             });
 
             let tracked = lock.tracker.get(&show.id.unwrap()).is_some();
+            let (latest_episode, next_air_date) = get_next_airing_episode(&show.next_airing_episode);
 
             CardTemplate {
                 show: show.clone(),
                 tracker: TrackedTemplate {
                     entry: TableEntry {
                         title,
-                        latest_episode: show
-                            .latest_episode
-                            .map_or_else(|| "N/A".to_string(), |e| format!("Episode {}", e)),
-                        next_air_date: show.next_air_date.clone().unwrap_or("N/A".to_string()),
+                        latest_episode,
+                        next_air_date,
                         is_tracked: tracked,
                         id: show.id.unwrap(),
                     },

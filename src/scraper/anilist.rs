@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use reqwest::Client;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::json;
@@ -35,6 +36,10 @@ query ($season: MediaSeason, $seasonYear: Int){
           month
           day
       }
+      nextAiringEpisode {
+          episode
+          airingAt
+      }
     }
 
   }
@@ -60,8 +65,15 @@ pub struct AniShow {
     pub episodes: Option<u16>,
     pub duration: Option<u16>,
     pub studios: Option<Studio>,
-    pub latest_episode: Option<u16>,
-    pub next_air_date: Option<String>,
+    #[serde(rename = "nextAiringEpisode")]
+    pub next_airing_episode: Option<NextAiringEpisode>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct NextAiringEpisode {
+    pub episode: Option<u16>,
+    #[serde(rename = "airingAt")]
+    pub airing_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -115,14 +127,19 @@ fn sanitize_html(input: &str) -> String {
         }
 
         match ch {
-            '<' if chars.peek() == Some(&'!') && chars.clone().nth(1) == Some('-') && chars.clone().nth(2) == Some('-') => {
+            '<' if chars.peek() == Some(&'!')
+                && chars.clone().nth(1) == Some('-')
+                && chars.clone().nth(2) == Some('-') =>
+            {
                 sanitized.push(ch);
                 sanitized.push(chars.next().unwrap()); // '!'
                 sanitized.push(chars.next().unwrap()); // '-'
                 sanitized.push(chars.next().unwrap()); // '-'
                 in_comment = true;
-            },
-            '<' if chars.peek().map(|next_ch| next_ch.to_ascii_lowercase()) == Some('i') && chars.clone().nth(1).map(|next_ch| next_ch) == Some('>') => {
+            }
+            '<' if chars.peek().map(|next_ch| next_ch.to_ascii_lowercase()) == Some('i')
+                && chars.clone().nth(1).map(|next_ch| next_ch) == Some('>') =>
+            {
                 if i_tag_open {
                     sanitized.push_str("</i>");
                     i_tag_open = false;
@@ -132,8 +149,15 @@ fn sanitize_html(input: &str) -> String {
                 sanitized.push('i');
                 sanitized.push(chars.next().unwrap()); // '>'
                 i_tag_open = true;
-            },
-            '<' if chars.peek().map(|&next_ch| next_ch) == Some('/') && chars.clone().nth(1).map(|next_ch| next_ch.to_ascii_lowercase()) == Some('i') && chars.clone().nth(2).map(|next_ch| next_ch) == Some('>') => {
+            }
+            '<' if chars.peek().map(|&next_ch| next_ch) == Some('/')
+                && chars
+                    .clone()
+                    .nth(1)
+                    .map(|next_ch| next_ch.to_ascii_lowercase())
+                    == Some('i')
+                && chars.clone().nth(2).map(|next_ch| next_ch) == Some('>') =>
+            {
                 if i_tag_open {
                     sanitized.push(ch);
                     sanitized.push(chars.next().unwrap()); // '/'
@@ -144,12 +168,18 @@ fn sanitize_html(input: &str) -> String {
                 } else {
                     chars.nth(2); // skip "</I" or "</i"
                 }
-            },
-            '<' if chars.peek().map(|&next_ch| next_ch) == Some('/') && !chars.clone().nth(1).map(|next_ch| next_ch.is_alphabetic()).unwrap_or_default() => {
+            }
+            '<' if chars.peek().map(|&next_ch| next_ch) == Some('/')
+                && !chars
+                    .clone()
+                    .nth(1)
+                    .map(|next_ch| next_ch.is_alphabetic())
+                    .unwrap_or_default() =>
+            {
                 // broken tag, skip two characters
                 chars.next();
                 chars.next();
-            },
+            }
             _ => sanitized.push(ch),
         }
     }
@@ -160,7 +190,6 @@ fn sanitize_html(input: &str) -> String {
 
     sanitized
 }
-
 
 fn sanitize_html_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
@@ -249,6 +278,7 @@ pub async fn get_anilist_data(season: Season, year: u16) -> anyhow::Result<Vec<A
         .send()
         .await?;
     let text_resp = resp.text().await?;
+    //println!("{}", text_resp);
     let result: Response = serde_json::from_str(&text_resp)?;
 
     Ok(result.data.page.media)
