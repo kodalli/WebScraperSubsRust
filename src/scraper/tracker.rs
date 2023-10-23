@@ -36,6 +36,8 @@ pub async fn run_tracker() {
 
         // Execute your data fetch task here
 
+        println!("Downloading Shows! {:?}", now);
+
         let data: HashMap<u32, TrackerDataEntry> = match read_tracked_data().await {
             Ok(val) => val,
             Err(err) => {
@@ -62,7 +64,10 @@ pub async fn run_tracker() {
                         (Some(url), Some(_)) => Some(url),
                     };
                     if let Some(url) = url {
-                        upload_to_transmission_rpc(vec![url.to_string()], &v.alternate, Some(v.season)).await;
+                        match upload_to_transmission_rpc(vec![url.to_string()], &v.alternate, Some(v.season)).await {
+                            Ok(_) => println!("Downloaded {:?}", &v.alternate),
+                            Err(err) => eprintln!("{:?}", err)
+                        }
                     }
                 }
                 None => { println!("No latest episode link available.") }
