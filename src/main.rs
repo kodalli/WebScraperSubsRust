@@ -1,7 +1,7 @@
 mod pages;
 mod scraper;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::SystemTime};
 use tokio::sync::Mutex;
 
 use anyhow::{self, Context};
@@ -18,6 +18,7 @@ use pages::{
 };
 use scraper::subsplease::get_magnet_links_from_subsplease;
 use scraper::transmission::upload_to_transmission_rpc;
+use scraper::tracker::run_tracker;
 use tower_http::services::ServeDir;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -58,6 +59,8 @@ async fn main() -> anyhow::Result<()> {
         .serve(router(state)?.into_make_service())
         .await
         .context("error while starting server")?;
+
+    tokio::spawn(run_tracker());
 
     Ok(())
 }

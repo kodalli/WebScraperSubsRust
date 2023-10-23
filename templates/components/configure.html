@@ -13,12 +13,12 @@
             id: {{ id }}
         </h2>
 
-        <form hx-post="api/save_configuration" hx-swap="configure-modal">
+        <form hx-post="api/save_configuration" hx-swap="outerHTML swap:out" hx-target="#configure-modal">
             <input type="hidden" name="title" value="{{ title }}">
             <input type="hidden" name="id" value="{{ id }}">
 
             <div class="relative z-0 w-full mb-12 group">
-                <input type="text" name="alternate title" id="alternate" value="{{ alternate }}"
+                <input type="text" name="alternate" id="alternate" value="{{ alternate }}"
                     class="block py-2.5 px-3 w-full text-sm text-white bg-transparent border-b border-yellow-500 appearance-none dark:focus:border-yellow-500 focus:outline-none focus:ring-0 focus:border-yellow-500 peer"
                     placeholder=" " required />
                 <label for="alternate"
