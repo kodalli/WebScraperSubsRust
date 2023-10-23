@@ -1,17 +1,21 @@
 <div class="pb-5">
-
+    <button hx-get="api/close" hx-swap="outerHTML swap:out" hx-target="#source-table"
+        class="relative top-2 right-2 text-4xl bg-black text-yellow-500 hover:text-yellow-300 focus:outline-none">
+        ×
+    </button>
     <div class="grid md:grid-cols-4 gap-6">
+
         <!-- Form -->
 
         <div class="md:col-span-1 pt-8">
             <h2 class="text-lg text-center text-yellow-500 mb-14">
-                {{ keyword }}
+                Keyword: {{ keyword }}
             </h2>
 
             <!-- Wrapping the input elements inside a form -->
             <form hx-post="api/search_source" hx-target="#source-table" hx-indicator="#source-spinner">
                 <div class="relative z-0 w-full mb-12 group">
-                    <input type="text" name="keyword" id="keyword"
+                    <input type="text" name="keyword" id="keyword" value="{{ keyword }}"
                         class="block py-2.5 px-3 w-full text-sm text-white bg-transparent border-b border-yellow-500 appearance-none dark:focus:border-yellow-500 focus:outline-none focus:ring-0 focus:border-yellow-500 peer"
                         placeholder=" " required />
                     <label for="keyword"
@@ -54,7 +58,8 @@
                             {{ link.title }}</td>
                         <td class="pl-80 py-4 text-yellow-300 border-b border-gray-800">Episode {{ link.episode }}</td>
                         <td class="pr-28 flex justify-end py-4 border-b border-gray-800">
-                            <button hx-post="api/download_from_link?season=1&url={{ link|get_url }}&title={{ link.title }}"
+                            <button
+                                hx-post="api/download_from_link?season=1&url={{ link|get_url }}&title={{ link.title }}"
                                 class="bg-yellow-500 px-3 py-1 text-black rounded-md shadow-sm transition-colors hover:bg-black hover:text-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-500">
                                 Download
                             </button>

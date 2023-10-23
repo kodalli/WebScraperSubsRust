@@ -2,7 +2,8 @@ use crate::{
     pages::{filters, HtmlTemplate},
     scraper::{
         anilist::{get_anilist_all_airing, get_anilist_data, AniShow, NextAiringEpisode, Season},
-        nyaasi::{fetch_sources, Link}, transmission::upload_to_transmission_rpc,
+        nyaasi::{fetch_sources, Link},
+        transmission::upload_to_transmission_rpc,
     },
 };
 use anyhow::Ok;
@@ -52,6 +53,15 @@ pub struct DownloadAnimeQuery {
     pub title: String,
     pub url: String,
     pub season: Option<u8>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct TrackerDataEntry {
+    pub title: String,
+    pub id: u32,
+    pub alternate: String,
+    pub season: u8,
+    pub source: String,
 }
 
 impl UserState {
@@ -129,6 +139,16 @@ pub struct TrackedTableTemplate {
 pub struct SourceTableTemplate {
     pub keyword: String,
     pub links: Vec<Link>,
+}
+
+#[derive(Template)]
+#[template(path = "components/configure.html")]
+pub struct ConfigureTemplate {
+    pub title: String,
+    pub id: u32,
+    pub alternate: String,
+    pub season: u8,
+    pub source: String,
 }
 
 async fn get_seasonal(season: Season, year: u16) -> anyhow::Result<Vec<AniShow>> {
@@ -424,9 +444,7 @@ pub async fn get_source(
 }
 
 #[axum::debug_handler]
-pub async fn search_source(
-    Form(payload): Form<AnimeKeywordQuery>,
-) -> impl IntoResponse {
+pub async fn search_source(Form(payload): Form<AnimeKeywordQuery>) -> impl IntoResponse {
     println!("Search!");
     let links = match fetch_sources(&payload.keyword, &payload.source).await {
         anyhow::Result::Ok(val) => val,
@@ -443,15 +461,89 @@ pub async fn search_source(
 }
 
 #[axum::debug_handler]
-pub async fn download_from_link(
-    Query(payload): Query<DownloadAnimeQuery>,
-) -> impl IntoResponse {
+pub async fn download_from_link(Query(payload): Query<DownloadAnimeQuery>) -> impl IntoResponse {
     let links = vec![payload.url];
     let show_name = &payload.title;
     let season_number = payload.season;
     match upload_to_transmission_rpc(links, show_name, season_number).await {
         anyhow::Result::Ok(_) => println!("Successful Download! {}", show_name),
-        Err(err) => eprintln!("Failed to download {:?}", err)
+        Err(err) => eprintln!("Failed to download {:?}", err),
     };
     Html("Done")
 }
+
+pub async fn read_tracked_data() -> anyhow::Result<HashMap<u32, TrackerDataEntry>> {
+    let mut file = File::open("tracked_data.json").await?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).await?;
+    match serde_json::from_slice(&buffer) {
+        anyhow::Result::Ok(map) => Ok(map),
+        Err(err) => {
+            println!("Failed to read tracked data from json: {:?}", err);
+            Ok(HashMap::new())
+        }
+    }
+}
+
+async fn save_tracked_data(tracker: &HashMap<u32, TrackerDataEntry>) -> anyhow::Result<()> {
+    let json_data = serde_json::to_string(tracker).expect("Failed to serialize hashmap");
+    let mut file = File::create("tracked_data.json").await?;
+    file.write_all(json_data.as_bytes()).await?;
+    Ok(())
+}
+
+#[axum::debug_handler]
+pub async fn get_configuration(
+    State(state): State<Arc<Mutex<UserState>>>,
+    Query(payload): Query<AnimeIdQuery>,
+) -> impl IntoResponse {
+    let data = read_tracked_data().await.unwrap();
+    let template = match data.get(&payload.id) {
+        Some(val) => ConfigureTemplate {
+            title: val.title.to_string(),
+            alternate: val.alternate.to_string(),
+            id: val.id,
+            season: val.season,
+            source: val.source.to_string(),
+        },
+        None => {
+            let lock = state.lock().await;
+            let show = lock.tracker.get(&payload.id).unwrap();
+            ConfigureTemplate {
+                title: show.title.to_string(),
+                alternate: show.title.to_string(),
+                id: payload.id,
+                season: 1,
+                source: "subsplease".into(),
+            }
+        }
+    };
+
+    HtmlTemplate::new(template)
+}
+
+#[axum::debug_handler]
+pub async fn save_configuration(
+    Form(payload): Form<TrackerDataEntry>
+) -> impl IntoResponse {
+    let mut data = read_tracked_data().await.unwrap();
+    data.insert(payload.id, payload);
+    match save_tracked_data(&data).await {
+        anyhow::Result::Ok(_) => {},
+        Err(err) => { println!("{:?}", err); }
+    };
+}
+
+
+#[axum::debug_handler]
+pub async fn close() -> impl IntoResponse {
+    Html("")
+}
+
+
+
+
+
+
+
+

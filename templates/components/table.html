@@ -15,18 +15,25 @@
                 <th class="px-6 py-3 border-b border-yellow-500">Show</th>
                 <th class="px-6 py-3 border-b border-yellow-500">Latest Episode</th>
                 <th class="px-6 py-3 border-b border-yellow-500">Next Air Date</th>
+                <th class="px-6 py-3 border-b border-yellow-500">Tracker Data</th>
                 <th class="px-9 py-3 border-b border-yellow-500">Action</th>
             </tr>
         </thead>
 
         <tbody>
             {% for show in shows %}
-            <tr class="hover:bg-gray-900 cursor-pointer" hx-get="/api/get_source?id={{ show.id }}" hx-trigger="click"
-                hx-target="#source-table" hx-indicator="#source-spinner">
-                <td scope="row" class="px-6 py-4 font-medium text-white border-b border-gray-800 truncate ...">{{
-                    show.title }}</td>
+            <tr class="hover:bg-gray-900">
+                <td scope="row" class="px-6 py-4 font-medium text-white border-b border-gray-800 truncate ..."
+                    ><a role="button" hx-get="/api/get_source?id={{ show.id }}" hx-trigger="click" hx-target="#source-table"
+                    hx-indicator="#source-spinner">{{ show.title }}</a></td>
                 <td class="px-6 py-4 text-white border-b border-gray-800">{{ show.latest_episode }}</td>
                 <td class="px-6 py-4 text-white border-b border-gray-800">{{ show.next_air_date }}</td>
+                <td class="px-6 py-4 border-b border-gray-800">
+                    <button hx-get="api/get_configuration?id={{ show.id }}" hx-target="#configuration-modal"
+                        class="bg-yellow-500 px-3 py-1 text-black rounded-md shadow-sm transition-colors hover:bg-black hover:text-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-500">
+                        Configure
+                    </button>
+                </td>
                 <td class="px-6 py-4 border-b border-gray-800">
                     <button onclick="handleRemoveClick(this)"
                         hx-post="/api/set_tracker?id={{ show.id }}&latest_episode={{ show.latest_episode }}&next_air_date={{ show.next_air_date }}&is_tracked={{ show.is_tracked }}&title={{ show.title|escape_quotes }}"

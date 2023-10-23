@@ -13,7 +13,7 @@ use pages::{
     anime::seasonal_anime,
     home::{
         currently_airing_anime, get_source, navigate_seasonal_anime, set_tracker, show_table,
-        update_user, view, UserState, download_from_link, search_source,
+        update_user, view, UserState, download_from_link, search_source, get_configuration, save_configuration, close,
     },
 };
 use scraper::subsplease::get_magnet_links_from_subsplease;
@@ -83,6 +83,10 @@ fn api_router(state: AppState) -> Router {
             post(search_source),
         )
         .route(
+            "/save_configuration",
+            post(save_configuration),
+        )
+        .route(
             "/show_table",
             get(show_table).with_state(state.user.clone()),
         )
@@ -98,7 +102,12 @@ fn api_router(state: AppState) -> Router {
             "/get_source",
             get(get_source).with_state(state.user.clone()),
         )
+        .route(
+            "/get_configuration",
+            get(get_configuration).with_state(state.user.clone()),
+        )
         .route("/anime", get(seasonal_anime))
+        .route("/close", get(close))
 }
 
 fn router(state: AppState) -> anyhow::Result<Router> {
