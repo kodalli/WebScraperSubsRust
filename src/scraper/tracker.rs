@@ -1,5 +1,6 @@
-use chrono::{Local, Duration, TimeZone};
-use std::{time::SystemTime, collections::HashMap};
+use anyhow::Ok;
+use chrono::{Duration, Local, TimeZone};
+use std::{collections::HashMap, time::SystemTime};
 use tokio::time::sleep;
 
 use crate::pages::home::{read_tracked_data, TrackerDataEntry};
@@ -22,8 +23,52 @@ fn next_run_time() -> SystemTime {
         next_5_am + Duration::days(1)
     };
 
-    let local_datetime = Local.from_local_datetime(&target_time).single().expect("Failed to convert naive datetime to local datetime");
+    let local_datetime = Local
+        .from_local_datetime(&target_time)
+        .single()
+        .expect("Failed to convert naive datetime to local datetime");
     local_datetime.into()
+}
+
+async fn download_shows() -> anyhow::Result<()> {
+    let data: HashMap<u32, TrackerDataEntry> = read_tracked_data().await.unwrap_or_default();
+
+    for (_, v) in data {
+        let links = fetch_sources(&v.alternate, &v.source)
+            .await
+            .unwrap_or_default();
+        let latest = links.iter().max_by_key(|link| {
+            let episode_number = link.episode.parse::<u16>().unwrap_or(0);
+            episode_number
+        });
+        match latest {
+            Some(val) => {
+                let url: Option<&str> = match (val.magnet_link.as_ref(), val.torrent_link.as_ref())
+                {
+                    (None, None) => None,
+                    (None, Some(url)) => Some(url),
+                    (Some(url), None) => Some(url),
+                    (Some(url), Some(_)) => Some(url),
+                };
+                if let Some(url) = url {
+                    match upload_to_transmission_rpc(
+                        vec![url.to_string()],
+                        &v.alternate,
+                        Some(v.season),
+                    )
+                    .await
+                    {
+                        anyhow::Result::Ok(_) => println!("Downloaded {:?}", &v.alternate),
+                        Err(err) => eprintln!("{:?}", err),
+                    }
+                }
+            }
+            None => {
+                println!("No latest episode link available.")
+            }
+        };
+    };
+    Ok(())
 }
 
 pub async fn run_tracker() {
@@ -38,42 +83,27 @@ pub async fn run_tracker() {
 
         println!("Downloading Shows! {:?}", now);
 
-        let data: HashMap<u32, TrackerDataEntry> = match read_tracked_data().await {
-            Ok(val) => val,
-            Err(err) => {
-                println!("{:?}", err);
-                HashMap::new()
-            },
+        match download_shows().await {
+            anyhow::Result::Ok(_) => println!("Sucess!"),
+            Err(err) => eprintln!("{:?}", err),
         };
-
-        for (_, v) in data {
-            let links = fetch_sources(&v.alternate, &v.source).await.unwrap_or_default();
-            let latest = links.iter().max_by_key(|link| {
-                let episode_number = link
-                    .episode
-                    .parse::<u16>()
-                    .unwrap_or(0);
-                episode_number
-            });
-            match latest {
-                Some(val) => {
-                    let url: Option<&str> = match (val.magnet_link.as_ref(), val.torrent_link.as_ref()) {
-                        (None, None) => None,
-                        (None, Some(url)) => Some(url),
-                        (Some(url), None) => Some(url),
-                        (Some(url), Some(_)) => Some(url),
-                    };
-                    if let Some(url) = url {
-                        match upload_to_transmission_rpc(vec![url.to_string()], &v.alternate, Some(v.season)).await {
-                            Ok(_) => println!("Downloaded {:?}", &v.alternate),
-                            Err(err) => eprintln!("{:?}", err)
-                        }
-                    }
-                }
-                None => { println!("No latest episode link available.") }
-            };
-        }
     }
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
 
+    #[tokio::test]
+    async fn test_tracker() {
+        match download_shows().await {
+            core::result::Result::Ok(res) => {
+                println!("Success {:?}", res);
+            }
+            Err(err) => {
+                println!("Error: {:?}", err);
+                assert!(false)
+            }
+        };
+    }
+}
