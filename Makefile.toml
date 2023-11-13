@@ -18,3 +18,20 @@ args = [
     "./assets/main.css",
     "--watch",
 ]
+
+#[tasks.build-wasix]
+#command = "cargo"
+#args = ["wasix", "build", "--release"]
+
+[tasks.build-wasm]
+install_crate = "wasm-pack"
+command = "wasm-pack"
+args = ["build", "--target", "web"]
+
+
+[tasks.run-wasmer]
+#depends_on = ["build-wasix"]
+depends_on = ["build-wasm"]
+command = "wasmer"
+args = ["run", "./pkg/web_scraper_subs_rust.wasm"]
+#args = ["run", "target/wasm32-wasix-wasi/release/web_scraper_subs_rust.wasm", "--net", "--env", "PORT=${PORT}", "--mapdir", "/assets:./assets"]

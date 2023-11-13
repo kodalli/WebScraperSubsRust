@@ -107,8 +107,9 @@ fn extract_show_info(title: &str) -> (&str, &str) {
 }
 
 pub async fn fetch_sources(keyword: &str, user: &str) -> anyhow::Result<Vec<Link>> {
+    let local_user = if user != "default" {Some(user)} else {None};
     let request_text =
-        get_torrents_from_nyaa(keyword, Some(user), None, None, None, None, None, None).await?;
+        get_torrents_from_nyaa(keyword, local_user, None, None, None, None, None, None).await?;
     let parsed = parse_nyaa(request_text);
 
     let links = parsed
