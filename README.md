@@ -1,5 +1,7 @@
 # Web Scraper Subs Rust
 
+![UI](ui.png)
+
 ### Scraper Logic
 
 ## Setting up a web driver
