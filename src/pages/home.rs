@@ -1,4 +1,5 @@
 use crate::{
+    db::{self, models::Show},
     pages::{filters, HtmlTemplate},
     scraper::{
         anilist::{get_anilist_all_airing, get_anilist_data, AniShow, NextAiringEpisode, Season},
@@ -6,22 +7,17 @@ use crate::{
         transmission::upload_to_transmission_rpc,
     },
 };
-use anyhow::Ok;
 use askama::Template;
 use axum::{
     extract::{Query, State},
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Json},
     Form,
 };
 use chrono::{DateTime, Datelike, Utc};
 use core::fmt;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
-use tokio::{
-    fs::File,
-    io::{AsyncReadExt, AsyncWriteExt},
-    sync::Mutex,
-};
+use tokio::sync::Mutex;
 
 #[derive(Deserialize)]
 pub struct UserState {
@@ -62,6 +58,21 @@ pub struct TrackerDataEntry {
     pub alternate: String,
     pub season: u8,
     pub source: String,
+    #[serde(default = "default_quality")]
+    pub quality: String,
+    pub download_path: Option<String>,
+    #[serde(default)]
+    pub last_downloaded_episode: u16,
+}
+
+fn default_quality() -> String {
+    "1080p".to_string()
+}
+
+#[derive(Deserialize)]
+pub struct RssConfigForm {
+    pub poll_times_per_day: u8,
+    pub enabled: bool,
 }
 
 impl UserState {
@@ -149,6 +160,9 @@ pub struct ConfigureTemplate {
     pub alternate: String,
     pub season: u8,
     pub source: String,
+    pub quality: String,
+    pub download_path: Option<String>,
+    pub last_downloaded_episode: u16,
 }
 
 async fn get_seasonal(season: Season, year: u16) -> anyhow::Result<Vec<AniShow>> {
@@ -406,24 +420,25 @@ pub async fn update_user(
     Html(format!("{}", payload.user))
 }
 
+/// Load tracked shows from the SQLite database into a HashMap
 pub async fn read_tracked_shows() -> anyhow::Result<HashMap<u32, TableEntry>> {
-    let mut file = File::open("tracked_shows.json").await?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).await?;
-    match serde_json::from_slice(&buffer) {
-        anyhow::Result::Ok(map) => Ok(map),
-        Err(err) => {
-            println!("Failed to read tracked shows from json: {:?}", err);
-            Ok(HashMap::new())
-        }
-    }
-}
-
-async fn save_tracked_shows(tracker: &HashMap<u32, TableEntry>) -> anyhow::Result<()> {
-    let json_data = serde_json::to_string(tracker).expect("Failed to serialize hashmap");
-    let mut file = File::create("tracked_shows.json").await?;
-    file.write_all(json_data.as_bytes()).await?;
-    Ok(())
+    let shows = db::with_db(|conn| db::get_tracked_shows(conn)).await?;
+    let map = shows
+        .into_iter()
+        .map(|show| {
+            (
+                show.id,
+                TableEntry {
+                    title: show.title,
+                    latest_episode: show.latest_episode.unwrap_or_else(|| "N/A".to_string()),
+                    next_air_date: show.next_air_date.unwrap_or_else(|| "N/A".to_string()),
+                    is_tracked: show.is_tracked,
+                    id: show.id,
+                },
+            )
+        })
+        .collect();
+    Ok(map)
 }
 
 #[axum::debug_handler]
@@ -434,19 +449,58 @@ pub async fn set_tracker(
     let mut lock = state.lock().await;
     let mut new_payload = payload.clone();
     new_payload.is_tracked = !new_payload.is_tracked;
+
+    // Update in-memory state
     if new_payload.is_tracked {
         lock.tracker.insert(new_payload.id, new_payload.clone());
     } else {
         lock.tracker.remove(&new_payload.id);
     }
-    let template = TrackedTemplate { entry: new_payload };
 
-    // Save the updated tracker hashmap to a JSON file
-    match save_tracked_shows(&lock.tracker).await {
-        anyhow::Result::Ok(_) => {}
-        Err(err) => eprintln!("Could not save hashmap to json: {:?}", err),
+    // Save to database
+    let show_id = new_payload.id;
+    let is_tracked = new_payload.is_tracked;
+    let title = new_payload.title.clone();
+    let latest_episode = new_payload.latest_episode.clone();
+    let next_air_date = new_payload.next_air_date.clone();
+
+    let db_result = db::with_db(move |conn| {
+        // Check if show exists in database
+        if let Some(mut existing_show) = db::get_show(conn, show_id)? {
+            // Update existing show's tracked status
+            existing_show.is_tracked = is_tracked;
+            existing_show.latest_episode = Some(latest_episode.clone());
+            existing_show.next_air_date = Some(next_air_date.clone());
+            db::update_show(conn, &existing_show)?;
+        } else if is_tracked {
+            // Insert new show if it's being tracked
+            let new_show = Show {
+                id: show_id,
+                title,
+                alternate: String::new(),
+                season: 1,
+                source: "subsplease".to_string(),
+                quality: "1080p".to_string(),
+                download_path: None,
+                last_downloaded_episode: 0,
+                last_downloaded_hash: None,
+                is_tracked: true,
+                latest_episode: Some(latest_episode),
+                next_air_date: Some(next_air_date),
+                created_at: None,
+                updated_at: None,
+            };
+            db::insert_show(conn, &new_show)?;
+        }
+        Ok(())
+    })
+    .await;
+
+    if let Err(err) = db_result {
+        eprintln!("Could not save to database: {:?}", err);
     }
 
+    let template = TrackedTemplate { entry: new_payload };
     HtmlTemplate::new(template).with_header("HX-Trigger", "newTrackerStatus")
 }
 
@@ -512,49 +566,52 @@ pub async fn download_from_link(Query(payload): Query<DownloadAnimeQuery>) -> im
     Html("Done")
 }
 
-pub async fn read_tracked_data() -> anyhow::Result<HashMap<u32, TrackerDataEntry>> {
-    let mut file = File::open("tracked_data.json").await?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).await?;
-    match serde_json::from_slice(&buffer) {
-        anyhow::Result::Ok(map) => Ok(map),
-        Err(err) => {
-            println!("Failed to read tracked data from json: {:?}", err);
-            Ok(HashMap::new())
-        }
-    }
-}
-
-async fn save_tracked_data(tracker: &HashMap<u32, TrackerDataEntry>) -> anyhow::Result<()> {
-    let json_data = serde_json::to_string(tracker).expect("Failed to serialize hashmap");
-    let mut file = File::create("tracked_data.json").await?;
-    file.write_all(json_data.as_bytes()).await?;
-    Ok(())
-}
 
 #[axum::debug_handler]
 pub async fn get_configuration(
     State(state): State<Arc<Mutex<UserState>>>,
     Query(payload): Query<AnimeIdQuery>,
 ) -> impl IntoResponse {
-    let data = read_tracked_data().await.unwrap();
-    let template = match data.get(&payload.id) {
-        Some(val) => ConfigureTemplate {
-            title: val.title.to_string(),
-            alternate: val.alternate.to_string(),
-            id: val.id,
-            season: val.season,
-            source: val.source.to_string(),
+    let show_id = payload.id;
+    let db_show = db::with_db(move |conn| db::get_show(conn, show_id)).await;
+
+    let template = match db_show {
+        Ok(Some(show)) => ConfigureTemplate {
+            title: show.title,
+            alternate: show.alternate,
+            id: show.id,
+            season: show.season,
+            source: show.source,
+            quality: show.quality,
+            download_path: show.download_path,
+            last_downloaded_episode: show.last_downloaded_episode,
         },
-        None => {
+        _ => {
+            // Fall back to in-memory tracker if not in database
             let lock = state.lock().await;
-            let show = lock.tracker.get(&payload.id).unwrap();
-            ConfigureTemplate {
-                title: show.title.to_string(),
-                alternate: show.title.to_string(),
-                id: payload.id,
-                season: 1,
-                source: "subsplease".into(),
+            if let Some(show) = lock.tracker.get(&payload.id) {
+                ConfigureTemplate {
+                    title: show.title.to_string(),
+                    alternate: show.title.to_string(),
+                    id: payload.id,
+                    season: 1,
+                    source: "subsplease".into(),
+                    quality: "1080p".into(),
+                    download_path: None,
+                    last_downloaded_episode: 0,
+                }
+            } else {
+                // Default template for unknown show
+                ConfigureTemplate {
+                    title: "Unknown".into(),
+                    alternate: "Unknown".into(),
+                    id: payload.id,
+                    season: 1,
+                    source: "subsplease".into(),
+                    quality: "1080p".into(),
+                    download_path: None,
+                    last_downloaded_episode: 0,
+                }
             }
         }
     };
@@ -563,21 +620,101 @@ pub async fn get_configuration(
 }
 
 #[axum::debug_handler]
-pub async fn save_configuration(
-    Form(payload): Form<TrackerDataEntry>
-) -> impl IntoResponse {
-    let mut data = read_tracked_data().await.unwrap();
-    data.insert(payload.id, payload);
-    match save_tracked_data(&data).await {
-        anyhow::Result::Ok(_) => {},
-        Err(err) => { println!("{:?}", err); }
-    };
+pub async fn save_configuration(Form(payload): Form<TrackerDataEntry>) -> impl IntoResponse {
+    let show_id = payload.id;
+    let title = payload.title.clone();
+    let alternate = payload.alternate.clone();
+    let season = payload.season;
+    let source = payload.source.clone();
+    let quality = payload.quality.clone();
+    let download_path = payload.download_path.clone();
+
+    let db_result = db::with_db(move |conn| {
+        // Check if show exists
+        if let Some(mut existing_show) = db::get_show(conn, show_id)? {
+            // Update existing show's configuration
+            existing_show.alternate = alternate;
+            existing_show.season = season;
+            existing_show.source = source;
+            existing_show.quality = quality;
+            existing_show.download_path = download_path;
+            db::update_show(conn, &existing_show)?;
+        } else {
+            // Insert new show
+            let new_show = Show {
+                id: show_id,
+                title,
+                alternate,
+                season,
+                source,
+                quality,
+                download_path,
+                last_downloaded_episode: 0,
+                last_downloaded_hash: None,
+                is_tracked: true,
+                latest_episode: None,
+                next_air_date: None,
+                created_at: None,
+                updated_at: None,
+            };
+            db::insert_show(conn, &new_show)?;
+        }
+        Ok(())
+    })
+    .await;
+
+    if let Err(err) = db_result {
+        eprintln!("Could not save configuration to database: {:?}", err);
+    }
+
+    Html("")
 }
 
 
 #[axum::debug_handler]
 pub async fn close() -> impl IntoResponse {
     Html("")
+}
+
+/// Get the current RSS configuration
+#[axum::debug_handler]
+pub async fn get_rss_config() -> impl IntoResponse {
+    match db::with_db(|conn| db::get_rss_config(conn)).await {
+        Ok(config) => Json(config).into_response(),
+        Err(err) => {
+            eprintln!("Failed to get RSS config: {:?}", err);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to get RSS config",
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Save the RSS configuration
+#[axum::debug_handler]
+pub async fn save_rss_config(Form(payload): Form<RssConfigForm>) -> impl IntoResponse {
+    let poll_times = payload.poll_times_per_day;
+    let enabled = payload.enabled;
+
+    let result = db::with_db(move |conn| {
+        db::update_poll_interval(conn, poll_times)?;
+        db::set_rss_enabled(conn, enabled)
+    })
+    .await;
+
+    match result {
+        Ok(_) => Json(serde_json::json!({"status": "ok"})).into_response(),
+        Err(err) => {
+            eprintln!("Failed to save RSS config: {:?}", err);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to save RSS config",
+            )
+                .into_response()
+        }
+    }
 }
 
 

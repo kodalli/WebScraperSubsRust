@@ -28,10 +28,10 @@
 
             <div class="relative w-full mb-12 group">
                 <label for="season" class="block mb-2 text-sm font-medium text-yellow-500">Select the season</label>
-                <select name="season" id="season" value="{{ season }}"
+                <select name="season" id="season"
                     class="bg-black border border-yellow-500 text-yellow-300 text-sm rounded-lg focus:ring-yellow-500 focus:border-yellow-500 block w-full p-2.5">
                     {% for i in 1..10 %}
-                    <option value="{{ i }}">{{ i }}</option>
+                    <option value="{{ i }}" {% if season == i %}selected{% endif %}>{{ i }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -39,11 +39,34 @@
             <div class="relative w-full mb-12 group">
                 <label for="source" class="block mb-2 text-sm font-medium text-yellow-500">Select your
                     source</label>
-                <select name="source" id="source" value="{{ source }}"
+                <select name="source" id="source"
                     class="bg-black border border-yellow-500 text-yellow-300 text-sm rounded-lg focus:ring-yellow-500 focus:border-yellow-500 block w-full p-2.5">
-                    <option value="subsplease">subsplease</option>
-                    <option value="Erai-raws">Erai-raws</option>
+                    <option value="subsplease" {% if source == "subsplease" %}selected{% endif %}>subsplease</option>
+                    <option value="Erai-raws" {% if source == "Erai-raws" %}selected{% endif %}>Erai-raws</option>
                 </select>
+            </div>
+
+            <div class="relative w-full mb-12 group">
+                <label for="quality" class="block mb-2 text-sm font-medium text-yellow-500">Quality Preference</label>
+                <select name="quality" id="quality"
+                    class="bg-black border border-yellow-500 text-yellow-300 text-sm rounded-lg focus:ring-yellow-500 focus:border-yellow-500 block w-full p-2.5">
+                    <option value="480p" {% if quality == "480p" %}selected{% endif %}>480p</option>
+                    <option value="720p" {% if quality == "720p" %}selected{% endif %}>720p</option>
+                    <option value="1080p" {% if quality == "1080p" %}selected{% endif %}>1080p</option>
+                    <option value="2160p" {% if quality == "2160p" %}selected{% endif %}>2160p/4K</option>
+                </select>
+            </div>
+
+            <div class="relative z-0 w-full mb-12 group">
+                <input type="text" name="download_path" id="download_path" value="{{ download_path.as_deref().unwrap_or("") }}"
+                    class="block py-2.5 px-3 w-full text-sm text-white bg-transparent border-b border-yellow-500 appearance-none dark:focus:border-yellow-500 focus:outline-none focus:ring-0 focus:border-yellow-500 peer"
+                    placeholder=" " />
+                <label for="download_path"
+                    class="peer-focus:font-medium absolute text-sm text-yellow-300 duration-300 transform -translate-y-6 scale-75 top-3 -z-10 origin-[0] peer-focus:left-0 peer-focus:text-yellow-600 peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-6">Custom Download Path (optional)</label>
+            </div>
+
+            <div class="text-sm text-gray-400 mb-6">
+                Last downloaded: Episode {{ last_downloaded_episode }}
             </div>
 
             <button type="submit"

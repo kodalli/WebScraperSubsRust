@@ -3,5 +3,6 @@ pub mod subsplease;
 pub mod nyaasi;
 pub mod anilist;
 pub mod tracker;
+pub mod rss;
 mod raii_process_driver;
 

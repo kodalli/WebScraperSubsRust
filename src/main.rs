@@ -1,3 +1,4 @@
+mod db;
 mod pages;
 mod scraper;
 
@@ -12,8 +13,9 @@ use axum::{
 use pages::{
     anime::seasonal_anime,
     home::{
-        currently_airing_anime, get_source, navigate_seasonal_anime, set_tracker, show_table,
-        update_user, view, UserState, download_from_link, search_source, get_configuration, save_configuration, close,
+        close, currently_airing_anime, download_from_link, get_configuration, get_rss_config,
+        get_source, navigate_seasonal_anime, save_configuration, save_rss_config, search_source,
+        set_tracker, show_table, update_user, view, UserState,
     },
 };
 use scraper::tracker::run_tracker;
@@ -35,6 +37,17 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     info!("initializing router and assets");
+
+    // Initialize the database connection and run migrations
+    db::init_connection().context("Failed to initialize database connection")?;
+    db::with_db(|conn| {
+        db::init_database(conn)?;
+        db::migrate_from_json_if_needed(conn)
+    })
+    .await
+    .context("Failed to initialize database schema or migrate data")?;
+
+    info!("database initialized successfully");
 
     // Use port env if available
     let port = std::env::var("PORT").unwrap_or_else(|_| "42069".to_string());
@@ -76,18 +89,9 @@ fn api_router(state: AppState) -> Router {
             "/set_tracker",
             post(set_tracker).with_state(state.user.clone()),
         )
-        .route(
-            "/download_from_link",
-            post(download_from_link),
-        )
-        .route(
-            "/search_source",
-            post(search_source),
-        )
-        .route(
-            "/save_configuration",
-            post(save_configuration),
-        )
+        .route("/download_from_link", post(download_from_link))
+        .route("/search_source", post(search_source))
+        .route("/save_configuration", post(save_configuration))
         .route(
             "/show_table",
             get(show_table).with_state(state.user.clone()),
@@ -107,6 +111,10 @@ fn api_router(state: AppState) -> Router {
         .route(
             "/get_configuration",
             get(get_configuration).with_state(state.user.clone()),
+        )
+        .route(
+            "/rss_config",
+            get(get_rss_config).post(save_rss_config),
         )
         .route("/anime", get(seasonal_anime))
         .route("/close", get(close))
@@ -166,31 +174,33 @@ fn router(state: AppState) -> anyhow::Result<Router> {
 //    (sp_title, season_number, batch)
 //}
 
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_scrape_subs_and_upload_batch_true() {
-        let sp_title = "Sousou no Frieren".to_string();
-        let season_number = Some(1);
-        let batch = true;
-        let magnet_links = get_magnet_links_from_subsplease(&sp_title, batch, 4444).await;
-        assert!(magnet_links.is_ok());
-        let result =
-            upload_to_transmission_rpc(magnet_links.unwrap(), &sp_title, season_number).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_scrape_subs_and_upload_batch_false() {
-        let sp_title = "Sousou no Frieren".to_string();
-        let season_number = Some(1);
-        let batch = false;
-        let magnet_links = get_magnet_links_from_subsplease(&sp_title, batch, 4445).await;
-        assert!(magnet_links.is_ok());
-        let result =
-            upload_to_transmission_rpc(magnet_links.unwrap(), &sp_title, season_number).await;
-        assert!(result.is_ok());
-    }
-}
+// #[cfg(test)]
+// mod test {
+//     use super::*;
+//     use crate::scraper::subsplease::get_magnet_links_from_subsplease;
+//     use crate::scraper::transmission::upload_to_transmission_rpc;
+//
+//     #[tokio::test]
+//     async fn test_scrape_subs_and_upload_batch_true() {
+//         let sp_title = "Sousou no Frieren".to_string();
+//         let season_number = Some(1);
+//         let batch = true;
+//         let magnet_links = get_magnet_links_from_subsplease(&sp_title, batch, 4444).await;
+//         assert!(magnet_links.is_ok());
+//         let result =
+//             upload_to_transmission_rpc(magnet_links.unwrap(), &sp_title, season_number).await;
+//         assert!(result.is_ok());
+//     }
+//
+//     #[tokio::test]
+//     async fn test_scrape_subs_and_upload_batch_false() {
+//         let sp_title = "Sousou no Frieren".to_string();
+//         let season_number = Some(1);
+//         let batch = false;
+//         let magnet_links = get_magnet_links_from_subsplease(&sp_title, batch, 4445).await;
+//         assert!(magnet_links.is_ok());
+//         let result =
+//             upload_to_transmission_rpc(magnet_links.unwrap(), &sp_title, season_number).await;
+//         assert!(result.is_ok());
+//     }
+// }

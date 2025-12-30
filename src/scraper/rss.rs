@@ -1,0 +1,496 @@
+//! RSS feed parser for Nyaa.si
+//!
+//! This module provides functionality to fetch and parse RSS feeds from nyaa.si,
+//! extracting torrent information including episode details, quality, and magnet links.
+
+use anyhow::{Context, Result};
+use quick_xml::events::Event;
+use quick_xml::Reader;
+use regex::Regex;
+
+/// Represents a single item from the Nyaa RSS feed
+#[derive(Debug, Clone)]
+pub struct RssItem {
+    pub title: String,
+    pub torrent_link: String,   // Direct .torrent download URL
+    pub view_url: String,       // https://nyaa.si/view/ID
+    pub pub_date: String,
+    pub info_hash: String,
+    pub category_id: String,
+    pub size: String,
+    pub seeders: u32,
+    pub leechers: u32,
+}
+
+/// Represents a parsed episode with extracted metadata
+#[derive(Debug, Clone)]
+pub struct ParsedEpisode {
+    pub show_title: String,
+    pub episode: u16,
+    pub quality: String,        // 480p, 720p, 1080p, 2160p
+    pub info_hash: String,
+    pub torrent_url: String,
+    pub magnet_url: String,     // Constructed from info_hash
+}
+
+/// Fetches and parses an RSS feed from nyaa.si
+///
+/// # Arguments
+/// * `source` - The uploader name (e.g., "subsplease", "Erai-raws")
+/// * `alternate` - The search term / show name
+///
+/// # Returns
+/// A vector of `RssItem` parsed from the feed
+///
+/// # Example
+/// ```ignore
+/// let items = fetch_rss_feed("subsplease", "One Piece").await?;
+/// ```
+pub async fn fetch_rss_feed(source: &str, alternate: &str) -> Result<Vec<RssItem>> {
+    let query = format!("{} {}", source, alternate);
+    let encoded_query = urlencoding::encode(&query);
+    let url = format!(
+        "https://nyaa.si/?page=rss&q={}&c=1_2&f=0",
+        encoded_query
+    );
+
+    let response = reqwest::get(&url)
+        .await
+        .with_context(|| format!("Failed to fetch RSS feed from {}", url))?;
+
+    let xml = response
+        .text()
+        .await
+        .with_context(|| "Failed to read response body")?;
+
+    parse_rss_xml(&xml)
+}
+
+/// Parses RSS XML content into a vector of RssItem
+///
+/// Handles the nyaa: namespace prefix for custom elements like seeders, leechers, etc.
+///
+/// # Arguments
+/// * `xml` - The raw XML string from the RSS feed
+///
+/// # Returns
+/// A vector of parsed `RssItem` structs
+pub fn parse_rss_xml(xml: &str) -> Result<Vec<RssItem>> {
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(true);
+
+    let mut items = Vec::new();
+    let mut buf = Vec::new();
+
+    // Current item being parsed
+    let mut current_item: Option<RssItemBuilder> = None;
+    let mut current_element: Option<String> = None;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+
+                match name.as_str() {
+                    "item" => {
+                        current_item = Some(RssItemBuilder::default());
+                    }
+                    _ => {
+                        current_element = Some(name);
+                    }
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+
+                if name == "item" {
+                    if let Some(builder) = current_item.take() {
+                        if let Some(item) = builder.build() {
+                            items.push(item);
+                        }
+                    }
+                }
+                current_element = None;
+            }
+            Ok(Event::Text(ref e)) => {
+                if let (Some(item), Some(element)) = (&mut current_item, &current_element) {
+                    let text = e.unescape().unwrap_or_default().to_string();
+                    if !text.is_empty() {
+                        match element.as_str() {
+                            "title" => item.title = Some(text),
+                            "link" => item.torrent_link = Some(text),
+                            "guid" => item.view_url = Some(text),
+                            "pubDate" => item.pub_date = Some(text),
+                            "nyaa:seeders" => {
+                                item.seeders = text.parse().ok();
+                            }
+                            "nyaa:leechers" => {
+                                item.leechers = text.parse().ok();
+                            }
+                            "nyaa:infoHash" => item.info_hash = Some(text),
+                            "nyaa:categoryId" => item.category_id = Some(text),
+                            "nyaa:size" => item.size = Some(text),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Error parsing XML at position {}: {:?}",
+                    reader.buffer_position(),
+                    e
+                ));
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    Ok(items)
+}
+
+/// Builder pattern for constructing RssItem during XML parsing
+#[derive(Default)]
+struct RssItemBuilder {
+    title: Option<String>,
+    torrent_link: Option<String>,
+    view_url: Option<String>,
+    pub_date: Option<String>,
+    info_hash: Option<String>,
+    category_id: Option<String>,
+    size: Option<String>,
+    seeders: Option<u32>,
+    leechers: Option<u32>,
+}
+
+impl RssItemBuilder {
+    fn build(self) -> Option<RssItem> {
+        Some(RssItem {
+            title: self.title?,
+            torrent_link: self.torrent_link.unwrap_or_default(),
+            view_url: self.view_url.unwrap_or_default(),
+            pub_date: self.pub_date.unwrap_or_default(),
+            info_hash: self.info_hash.unwrap_or_default(),
+            category_id: self.category_id.unwrap_or_default(),
+            size: self.size.unwrap_or_default(),
+            seeders: self.seeders.unwrap_or(0),
+            leechers: self.leechers.unwrap_or(0),
+        })
+    }
+}
+
+/// Parses episode information from a torrent title
+///
+/// Extracts the show name, episode number, and quality from typical anime release titles.
+///
+/// # Arguments
+/// * `title` - The torrent title string
+///
+/// # Returns
+/// A tuple of (show_title, episode_number, quality) if parsing succeeds
+///
+/// # Examples
+/// ```ignore
+/// let info = parse_episode_info("[SubsPlease] One Piece - 1060 (1080p) [37A98D45].mkv");
+/// assert_eq!(info, Some(("One Piece".to_string(), 1060, "1080p".to_string())));
+/// ```
+pub fn parse_episode_info(title: &str) -> Option<(String, u16, String)> {
+    // Pattern: [Source] Show Name - Episode (Quality) [hash].mkv
+    // Also handles: [Source] Show Name - Episode [Quality] [hash]
+    let re = Regex::new(r"\[.*?\]\s*(.*?)\s*-\s*(\d+)\s*.*?(\d{3,4}p)").ok()?;
+
+    let captures = re.captures(title)?;
+
+    let show_title = captures.get(1)?.as_str().trim().to_string();
+    let episode: u16 = captures.get(2)?.as_str().parse().ok()?;
+    let quality = captures.get(3)?.as_str().to_string();
+
+    Some((show_title, episode, quality))
+}
+
+/// Constructs a magnet URL from an info hash and title
+///
+/// # Arguments
+/// * `info_hash` - The torrent info hash (40 character hex string)
+/// * `title` - The display name for the torrent
+///
+/// # Returns
+/// A properly formatted magnet URL
+///
+/// # Example
+/// ```ignore
+/// let magnet = construct_magnet_url("e30690d4a8d1f5e45f5ded430bdaedc710da0245", "Show Name");
+/// assert!(magnet.starts_with("magnet:?xt=urn:btih:"));
+/// ```
+pub fn construct_magnet_url(info_hash: &str, title: &str) -> String {
+    let encoded_title = urlencoding::encode(title);
+    format!(
+        "magnet:?xt=urn:btih:{}&dn={}",
+        info_hash, encoded_title
+    )
+}
+
+/// Filters RSS items by video quality
+///
+/// # Arguments
+/// * `items` - Slice of RssItem to filter
+/// * `quality` - Quality string to match (e.g., "1080p", "720p")
+///
+/// # Returns
+/// A vector of references to items that contain the specified quality in their title
+pub fn filter_by_quality<'a>(items: &'a [RssItem], quality: &str) -> Vec<&'a RssItem> {
+    items
+        .iter()
+        .filter(|item| item.title.contains(quality))
+        .collect()
+}
+
+/// Converts an RssItem to a ParsedEpisode
+///
+/// Combines RSS data with parsed episode information to create a complete
+/// episode representation with magnet URL.
+///
+/// # Arguments
+/// * `item` - The RssItem to convert
+///
+/// # Returns
+/// Some(ParsedEpisode) if the title can be parsed, None otherwise
+pub fn rss_item_to_parsed_episode(item: &RssItem) -> Option<ParsedEpisode> {
+    let (show_title, episode, quality) = parse_episode_info(&item.title)?;
+    let magnet_url = construct_magnet_url(&item.info_hash, &item.title);
+
+    Some(ParsedEpisode {
+        show_title,
+        episode,
+        quality,
+        info_hash: item.info_hash.clone(),
+        torrent_url: item.torrent_link.clone(),
+        magnet_url,
+    })
+}
+
+/// Fetches and parses episodes from RSS feed, returning only valid parsed episodes
+///
+/// This is a convenience function that combines fetching, parsing, and filtering
+/// into a single operation.
+///
+/// # Arguments
+/// * `source` - The uploader name
+/// * `alternate` - The search term / show name
+/// * `quality` - Optional quality filter (e.g., "1080p")
+///
+/// # Returns
+/// A vector of successfully parsed episodes
+pub async fn fetch_episodes(
+    source: &str,
+    alternate: &str,
+    quality: Option<&str>,
+) -> Result<Vec<ParsedEpisode>> {
+    let items = fetch_rss_feed(source, alternate).await?;
+
+    let filtered_items: Vec<&RssItem> = if let Some(q) = quality {
+        filter_by_quality(&items, q)
+    } else {
+        items.iter().collect()
+    };
+
+    let episodes: Vec<ParsedEpisode> = filtered_items
+        .into_iter()
+        .filter_map(rss_item_to_parsed_episode)
+        .collect();
+
+    Ok(episodes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SAMPLE_RSS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:nyaa="https://nyaa.si/xmlns/nyaa" version="2.0">
+  <channel>
+    <title>Nyaa - Search - Torrent File RSS</title>
+    <item>
+      <title>[SubsPlease] One Piece - 1060 (1080p) [37A98D45].mkv</title>
+      <link>https://nyaa.si/download/2059096.torrent</link>
+      <guid isPermaLink="true">https://nyaa.si/view/2059096</guid>
+      <pubDate>Tue, 30 Dec 2025 06:22:52 -0000</pubDate>
+      <nyaa:seeders>18</nyaa:seeders>
+      <nyaa:leechers>8</nyaa:leechers>
+      <nyaa:infoHash>e30690d4a8d1f5e45f5ded430bdaedc710da0245</nyaa:infoHash>
+      <nyaa:categoryId>1_2</nyaa:categoryId>
+      <nyaa:size>1.2 GiB</nyaa:size>
+    </item>
+    <item>
+      <title>[Erai-raws] Goblin Slayer II - 03 [720p][Multiple Subtitle]</title>
+      <link>https://nyaa.si/download/2059097.torrent</link>
+      <guid isPermaLink="true">https://nyaa.si/view/2059097</guid>
+      <pubDate>Tue, 30 Dec 2025 05:00:00 -0000</pubDate>
+      <nyaa:seeders>50</nyaa:seeders>
+      <nyaa:leechers>10</nyaa:leechers>
+      <nyaa:infoHash>a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2</nyaa:infoHash>
+      <nyaa:categoryId>1_2</nyaa:categoryId>
+      <nyaa:size>500 MiB</nyaa:size>
+    </item>
+  </channel>
+</rss>"#;
+
+    #[test]
+    fn test_parse_rss_xml() {
+        let items = parse_rss_xml(SAMPLE_RSS).unwrap();
+
+        assert_eq!(items.len(), 2);
+
+        let first = &items[0];
+        assert_eq!(
+            first.title,
+            "[SubsPlease] One Piece - 1060 (1080p) [37A98D45].mkv"
+        );
+        assert_eq!(
+            first.torrent_link,
+            "https://nyaa.si/download/2059096.torrent"
+        );
+        assert_eq!(first.view_url, "https://nyaa.si/view/2059096");
+        assert_eq!(first.seeders, 18);
+        assert_eq!(first.leechers, 8);
+        assert_eq!(
+            first.info_hash,
+            "e30690d4a8d1f5e45f5ded430bdaedc710da0245"
+        );
+        assert_eq!(first.category_id, "1_2");
+        assert_eq!(first.size, "1.2 GiB");
+    }
+
+    #[test]
+    fn test_parse_episode_info_subsplease() {
+        let title = "[SubsPlease] One Piece - 1060 (1080p) [37A98D45].mkv";
+        let result = parse_episode_info(title);
+
+        assert!(result.is_some());
+        let (show, episode, quality) = result.unwrap();
+        assert_eq!(show, "One Piece");
+        assert_eq!(episode, 1060);
+        assert_eq!(quality, "1080p");
+    }
+
+    #[test]
+    fn test_parse_episode_info_erai_raws() {
+        let title = "[Erai-raws] Goblin Slayer II - 03 [1080p][Multiple Subtitle] [ENG][POR-BR]";
+        let result = parse_episode_info(title);
+
+        assert!(result.is_some());
+        let (show, episode, quality) = result.unwrap();
+        assert_eq!(show, "Goblin Slayer II");
+        assert_eq!(episode, 3);
+        assert_eq!(quality, "1080p");
+    }
+
+    #[test]
+    fn test_parse_episode_info_720p() {
+        let title = "[SubsPlease] Frieren - 12 (720p) [ABC123].mkv";
+        let result = parse_episode_info(title);
+
+        assert!(result.is_some());
+        let (show, episode, quality) = result.unwrap();
+        assert_eq!(show, "Frieren");
+        assert_eq!(episode, 12);
+        assert_eq!(quality, "720p");
+    }
+
+    #[test]
+    fn test_parse_episode_info_480p() {
+        let title = "[SubsPlease] Some Anime - 05 (480p) [hash].mkv";
+        let result = parse_episode_info(title);
+
+        assert!(result.is_some());
+        let (_, _, quality) = result.unwrap();
+        assert_eq!(quality, "480p");
+    }
+
+    #[test]
+    fn test_parse_episode_info_2160p() {
+        let title = "[SubsPlease] 4K Anime - 01 (2160p) [hash].mkv";
+        let result = parse_episode_info(title);
+
+        assert!(result.is_some());
+        let (_, _, quality) = result.unwrap();
+        assert_eq!(quality, "2160p");
+    }
+
+    #[test]
+    fn test_parse_episode_info_invalid() {
+        let title = "Some random text without proper format";
+        let result = parse_episode_info(title);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_construct_magnet_url() {
+        let info_hash = "e30690d4a8d1f5e45f5ded430bdaedc710da0245";
+        let title = "One Piece - 1060";
+
+        let magnet = construct_magnet_url(info_hash, title);
+
+        assert!(magnet.starts_with("magnet:?xt=urn:btih:"));
+        assert!(magnet.contains(info_hash));
+        assert!(magnet.contains("One%20Piece"));
+    }
+
+    #[test]
+    fn test_filter_by_quality() {
+        let items = parse_rss_xml(SAMPLE_RSS).unwrap();
+
+        let hd_items = filter_by_quality(&items, "1080p");
+        assert_eq!(hd_items.len(), 1);
+        assert!(hd_items[0].title.contains("1080p"));
+
+        let sd_items = filter_by_quality(&items, "720p");
+        assert_eq!(sd_items.len(), 1);
+        assert!(sd_items[0].title.contains("720p"));
+    }
+
+    #[test]
+    fn test_rss_item_to_parsed_episode() {
+        let items = parse_rss_xml(SAMPLE_RSS).unwrap();
+        let episode = rss_item_to_parsed_episode(&items[0]);
+
+        assert!(episode.is_some());
+        let ep = episode.unwrap();
+        assert_eq!(ep.show_title, "One Piece");
+        assert_eq!(ep.episode, 1060);
+        assert_eq!(ep.quality, "1080p");
+        assert!(!ep.magnet_url.is_empty());
+        assert!(ep.magnet_url.starts_with("magnet:?xt=urn:btih:"));
+    }
+
+    #[ignore]
+    #[tokio::test]
+    async fn test_fetch_rss_feed_live() {
+        // Integration test - requires network access
+        let items = fetch_rss_feed("subsplease", "One Piece").await;
+        assert!(items.is_ok());
+        let items = items.unwrap();
+        println!("Fetched {} items", items.len());
+        for item in items.iter().take(3) {
+            println!("  - {}", item.title);
+        }
+    }
+
+    #[ignore]
+    #[tokio::test]
+    async fn test_fetch_episodes_live() {
+        // Integration test - requires network access
+        let episodes = fetch_episodes("subsplease", "One Piece", Some("1080p")).await;
+        assert!(episodes.is_ok());
+        let episodes = episodes.unwrap();
+        println!("Fetched {} episodes", episodes.len());
+        for ep in episodes.iter().take(3) {
+            println!(
+                "  - {} Episode {} ({})",
+                ep.show_title, ep.episode, ep.quality
+            );
+        }
+    }
+}
