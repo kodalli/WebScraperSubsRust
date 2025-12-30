@@ -1,4 +1,4 @@
-use crate::scraper::{anilist::{AniShow, CoverImage, Studio, Title}, nyaasi::Link};
+use crate::scraper::{anilist::{AniShow, CoverImage, Season, Studio, Title}, nyaasi::Link};
 
 pub fn unwrap_or_na<T: std::fmt::Display>(value: &Option<T>) -> ::askama::Result<String> {
     Ok(value.as_ref().map_or("N/A".to_string(), |v| v.to_string()))
@@ -78,4 +78,14 @@ pub fn get_url(link: &Link) -> ::askama::Result<String> {
         (Some(mag), Some(_)) => mag.to_string(),
     };
     Ok(res)
+}
+
+pub fn short_season(season: &Season, year: &u16) -> ::askama::Result<String> {
+    let code = match season {
+        Season::SPRING => "SP",
+        Season::SUMMER => "SU",
+        Season::FALL => "FA",
+        Season::WINTER => "WI",
+    };
+    Ok(format!("{}{}", code, year % 100))
 }

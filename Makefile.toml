@@ -2,15 +2,17 @@
 PORT = 42069
 
 [tasks.run]
+run_task = { name = ["styles", "watch"], parallel = true }
+
+[tasks.watch]
 env = { "RUST_ENV" = "development", "PORT" = "${PORT}" }
 install_crate = "cargo-watch"
 command = "cargo"
 args = ["watch", "--ignore", "tracked_shows.json", "-x", "run"]
 
 [tasks.styles]
-command = "pnpm"
+command = "npx"
 args = [
-    "dlx",
     "tailwindcss",
     "-i",
     "./styles/tailwindcss.css",

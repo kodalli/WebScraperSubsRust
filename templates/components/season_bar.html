@@ -1,7 +1,7 @@
 <div class="pb-5">
     <nav class="bg-black text-center border border-yellow-400 py-5 px-2 font-semibold  ">
 
-        {% let button_style = "rounded-md bg-black px-3.5 py-1.5 text-white shadow-sm transition-colors hover:bg-white
+        {% let button_style = "season-btn rounded-md bg-black px-3.5 py-1.5 text-white shadow-sm transition-colors hover:bg-white
         hover:text-black hover:ring-2 hover:ring-black focus-visible:outline focus-visible:outline-2
         focus-visible:outline-offset-2 focus-visible:outline-black" %}
 
@@ -21,33 +21,38 @@
         <ul class="inline-flex list-none p-0 m-0">
             <li class="mx-4">
                 <a href="#{{ s0 }}{{ y0 }}" class="{{ button_style }}"
-                    hx-get="/api/navigate_seasonal_anime?season={{ s0 }}&year={{ y0 }}" hx-target="#show-grid">
-                    {{ s0 }} {{ y0 }}
+                    hx-get="/api/navigate_seasonal_anime?season={{ s0 }}&year={{ y0 }}" hx-target="#show-grid"
+                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline')); this.classList.add('underline')">
+                    {{ s0|short_season(y0) }}
                 </a>
             </li>
             <li class="mx-4">
                 <a href="#{{ s1 }}{{ y1 }}" class="{{ button_style }}"
-                    hx-get="/api/navigate_seasonal_anime?season={{ s1 }}&year={{ y1 }}" hx-target="#show-grid">
-                    {{ s1 }} {{ y1 }}
+                    hx-get="/api/navigate_seasonal_anime?season={{ s1 }}&year={{ y1 }}" hx-target="#show-grid"
+                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline')); this.classList.add('underline')">
+                    {{ s1|short_season(y1) }}
                 </a>
             </li>
             <li class="mx-4">
-                <a href="#{{ s2 }}{{ y2 }}" class="{{ button_style }}"
-                    hx-get="/api/navigate_seasonal_anime?season={{ s2 }}&year={{ y2 }}" hx-target="#show-grid">
-                    {{ s2 }} {{ y2 }}
+                <a href="#{{ s2 }}{{ y2 }}" class="{{ button_style }} underline"
+                    hx-get="/api/navigate_seasonal_anime?season={{ s2 }}&year={{ y2 }}" hx-target="#show-grid"
+                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline')); this.classList.add('underline')">
+                    {{ s2|short_season(y2) }}
                 </a>
             </li>
             <li class="mx-4">
                 <a href="#{{ s3 }}{{ y3 }}" class="{{ button_style }}"
-                    hx-get="/api/navigate_seasonal_anime?season={{ s3 }}&year={{ y3 }}" hx-target="#show-grid">
-                    {{ s3 }} {{ y3 }}
+                    hx-get="/api/navigate_seasonal_anime?season={{ s3 }}&year={{ y3 }}" hx-target="#show-grid"
+                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline')); this.classList.add('underline')">
+                    {{ s3|short_season(y3) }}
                 </a>
             </li>
             <li class="mx-4">
                 <a href="#currently_airing"
                     hx-get="/api/currently_airing" hx-target="#show-grid"
-                    class="rounded-md bg-white px-3.5 py-1.5 text-black shadow-sm transition-colors hover:bg-black hover:text-white hover:ring-2 hover:ring-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
-                    Currently Airing
+                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline')); this.classList.add('underline')"
+                    class="{{ button_style }}">
+                    Airing
                 </a>
             </li>
         </ul>

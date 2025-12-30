@@ -257,6 +257,31 @@ fn get_next_airing_episode(next_airing_episode: &Option<NextAiringEpisode>) -> (
     (episode, air_date)
 }
 
+fn calculate_sort_score(show: &AniShow) -> f64 {
+    let rating = show.average_score.or(show.mean_score);
+    let popularity = show.popularity.unwrap_or(0);
+
+    match rating {
+        Some(r) => {
+            let norm_rating = r as f64 / 100.0;
+            let norm_pop = if popularity > 0 {
+                (popularity as f64).log10() / 7.0
+            } else {
+                0.0
+            };
+            (0.7 * norm_rating) + (0.3 * norm_pop)
+        }
+        None => {
+            // No rating - use popularity only
+            if popularity > 0 {
+                (popularity as f64).log10() / 7.0 * 0.3
+            } else {
+                0.0
+            }
+        }
+    }
+}
+
 fn build_card_templates(shows: &[AniShow], lock: &UserState) -> Vec<CardTemplate> {
     shows
         .iter()
@@ -287,9 +312,14 @@ fn build_card_templates(shows: &[AniShow], lock: &UserState) -> Vec<CardTemplate
 
 pub async fn view(State(state): State<Arc<Mutex<UserState>>>) -> impl IntoResponse {
     let lock = state.lock().await;
-    let shows: Vec<AniShow> = get_seasonal(lock.season, lock.year)
+    let mut shows: Vec<AniShow> = get_seasonal(lock.season, lock.year)
         .await
         .unwrap_or_default();
+    shows.sort_by(|a, b| {
+        calculate_sort_score(b)
+            .partial_cmp(&calculate_sort_score(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let card_templates: Vec<CardTemplate> = build_card_templates(&shows, &lock);
     let grid_template = GridTemplate {
         cards: card_templates,
@@ -329,9 +359,14 @@ pub async fn navigate_seasonal_anime(
     };
     lock.year = payload.year;
 
-    let cards: Vec<AniShow> = get_seasonal(lock.season, lock.year)
+    let mut cards: Vec<AniShow> = get_seasonal(lock.season, lock.year)
         .await
         .unwrap_or_default();
+    cards.sort_by(|a, b| {
+        calculate_sort_score(b)
+            .partial_cmp(&calculate_sort_score(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let card_templates: Vec<CardTemplate> = build_card_templates(&cards, &lock);
 
@@ -347,7 +382,12 @@ pub async fn currently_airing_anime(
     State(state): State<Arc<Mutex<UserState>>>,
 ) -> impl IntoResponse {
     let lock = state.lock().await;
-    let cards: Vec<AniShow> = get_currently_airing().await.unwrap_or_default();
+    let mut cards: Vec<AniShow> = get_currently_airing().await.unwrap_or_default();
+    cards.sort_by(|a, b| {
+        calculate_sort_score(b)
+            .partial_cmp(&calculate_sort_score(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let card_templates: Vec<CardTemplate> = build_card_templates(&cards, &lock);
     let grid = GridTemplate {
         cards: card_templates,
