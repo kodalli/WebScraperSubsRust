@@ -13,7 +13,7 @@ use axum::{
     response::{Html, IntoResponse},
     Form,
 };
-use chrono::{Datelike, NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use core::fmt;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
@@ -248,8 +248,8 @@ fn get_next_airing_episode(next_airing_episode: &Option<NextAiringEpisode>) -> (
         .map_or_else(|| "N/A".to_string(), |e| format!("Episode {}", e));
     let air_date = nae.airing_at.map_or_else(
         || "N/A".to_string(),
-        |d| match NaiveDateTime::from_timestamp_opt(d, 0) {
-            Some(date) => format!("{}", date),
+        |d| match DateTime::from_timestamp(d, 0) {
+            Some(date) => format!("{}", date.naive_utc()),
             None => "N/A".into(),
         },
     );

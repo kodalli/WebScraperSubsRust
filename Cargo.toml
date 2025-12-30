@@ -1,24 +1,24 @@
 [package]
 name = "web_scraper_subs_rust"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.75"
-axum = { version = "0.6.20", features = ["macros"] }
-reqwest = { version = "0.11.22", features = ["json"] }
-thirtyfour = "0.31.0"
-tokio = { version = "1.32.0", features = ["full"] }
-askama = { version = "0.12.1", features = ["with-axum"] }
-tower = { version = "0.4.13", features = ["util"] }
-tower-http = { version = "0.4.4", features = ["trace", "fs"] }
-askama_axum = "0.3.0"
-tracing = "0.1.37"
-tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
-serde = { version = "1.0.188", features = ["derive"] }
-scraper = "0.17.1"
-serde_json = "1.0.107"
-chrono = "0.4.31"
-regex = "1.10.2"
+anyhow = "1.0"
+axum = { version = "0.7", features = ["macros"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+thirtyfour = "0.36"
+tokio = { version = "1", features = ["full"] }
+askama = { version = "0.12", features = ["with-axum"] }
+askama_axum = "0.4"
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.5", features = ["trace", "fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1.0", features = ["derive"] }
+scraper = "0.25"
+serde_json = "1.0"
+chrono = "0.4"
+regex = "1"

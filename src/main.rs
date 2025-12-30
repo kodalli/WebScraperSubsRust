@@ -1,7 +1,7 @@
 mod pages;
 mod scraper;
 
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use anyhow::{self, Context};
@@ -16,9 +16,8 @@ use pages::{
         update_user, view, UserState, download_from_link, search_source, get_configuration, save_configuration, close,
     },
 };
-use scraper::subsplease::get_magnet_links_from_subsplease;
-use scraper::transmission::upload_to_transmission_rpc;
 use scraper::tracker::run_tracker;
+use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -55,12 +54,12 @@ async fn main() -> anyhow::Result<()> {
         ))),
     };
 
-    axum::Server::bind(&addr)
-        .serve(router(state)?.into_make_service())
+    tokio::spawn(run_tracker());
+
+    let listener = TcpListener::bind(&addr).await.context("failed to bind TCP listener")?;
+    axum::serve(listener, router(state)?)
         .await
         .context("error while starting server")?;
-
-    tokio::spawn(run_tracker());
 
     Ok(())
 }
