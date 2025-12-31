@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  anime-tracker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: anime-tracker
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    environment:
+      # Surfshark VPN
+      - OPENVPN_PROVIDER=surfshark
+      - OPENVPN_USERNAME=${SURFSHARK_EMAIL}
+      - OPENVPN_PASSWORD=${SURFSHARK_PASSWORD}
+      - OPENVPN_CONFIG=${VPN_LOCATION:-us-nyc}
+      # Transmission
+      - TRANSMISSION_RPC_USERNAME=${TRANSMISSION_USER:-admin}
+      - TRANSMISSION_RPC_PASSWORD=${TRANSMISSION_PASS}
+      - TRANSMISSION_WEB_UI=flood-for-transmission
+      - TRANSMISSION_DOWNLOAD_DIR=/data/Anime
+      # Anime Tracker
+      - DATABASE_PATH=/app/data/tracker.db
+      - TRANSMISSION_HOST=localhost
+      - TRANSMISSION_PORT=9091
+      - PORT=8080
+      # General
+      - LOCAL_NETWORK=${LOCAL_NETWORK:-192.168.0.0/16}
+      - TZ=${TZ:-America/New_York}
+    volumes:
+      - ${DOWNLOAD_PATH:-./downloads}:/data
+      - ./data:/app/data
+      - ./config:/config
+    ports:
+      - "9091:9091"   # Transmission Web UI
+      - "8080:8080"   # Anime Tracker
+    restart: unless-stopped

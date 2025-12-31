@@ -1,0 +1,9 @@
+target/
+.git/
+.gitignore
+*.md
+.env
+tracker.db
+downloads/
+config/
+data/

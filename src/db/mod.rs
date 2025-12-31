@@ -12,12 +12,14 @@ use tokio::sync::Mutex;
 /// Global database connection wrapped in a Mutex for thread-safe access
 static DB: OnceLock<Mutex<Connection>> = OnceLock::new();
 
-/// Database file path
-const DB_PATH: &str = "tracker.db";
+/// Get the database file path from environment or use default
+fn get_db_path() -> String {
+    std::env::var("DATABASE_PATH").unwrap_or_else(|_| "tracker.db".to_string())
+}
 
 /// Initialize the global database connection
 pub fn init_connection() -> Result<()> {
-    let conn = Connection::open(DB_PATH).context("Failed to open database connection")?;
+    let conn = Connection::open(&get_db_path()).context("Failed to open database connection")?;
 
     // Enable foreign keys
     conn.execute("PRAGMA foreign_keys = ON", [])

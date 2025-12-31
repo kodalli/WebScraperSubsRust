@@ -5,10 +5,12 @@ pub async fn upload_to_transmission_rpc(
     show_name: &str,
     season_number: Option<u8>,
 ) -> Result<()> {
-    let url = "http://192.168.86.71:9091/transmission/rpc";
+    let host = std::env::var("TRANSMISSION_HOST").unwrap_or_else(|_| "192.168.86.71".to_string());
+    let port = std::env::var("TRANSMISSION_PORT").unwrap_or_else(|_| "9091".to_string());
+    let url = format!("http://{}:{}/transmission/rpc", host, port);
 
     let client = reqwest::Client::new();
-    let resp = client.get(url).send().await?;
+    let resp = client.get(&url).send().await?;
     let session_id = resp
         .headers()
         .get("X-Transmission-Session-Id")
@@ -37,7 +39,7 @@ pub async fn upload_to_transmission_rpc(
         );
 
         let post_resp = client
-            .post(url)
+            .post(&url)
             .header("X-Transmission-Session-Id", session_id)
             .header("Content-Type", "application/json")
             .body(body)

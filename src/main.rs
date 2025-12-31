@@ -55,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
         .parse()
         .context("PORT environment variable is not a vlid u16")?;
 
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
 
     eprintln!("Listening on http://{}", addr);
     info!("router initalized, now listening on port {}", port);
