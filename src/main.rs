@@ -7,16 +7,18 @@ use tokio::sync::Mutex;
 
 use anyhow::{self, Context};
 use axum::{
-    routing::{get, post},
+    routing::{delete, get, post, put},
     Router,
 };
 use pages::{
     anime::seasonal_anime,
     home::{
-        clear_transmission, close, confirm_match, currently_airing_anime, download_from_link,
-        get_configuration, get_rss_config, get_source, navigate_seasonal_anime, save_configuration,
-        save_rss_config, search_matches, search_source, set_tracker, show_table,
-        skip_match_selection, sync_now, update_user, view, UserState,
+        clear_transmission, close, confirm_match, create_filter, create_show_filter,
+        currently_airing_anime, delete_filter, delete_show_filter, download_from_link,
+        get_configuration, get_filters, get_rss_config, get_show_filters, get_source,
+        navigate_seasonal_anime, save_configuration, save_rss_config, search_matches, search_source,
+        set_tracker, show_table, skip_match_selection, sync_now, toggle_filter, update_filter,
+        update_user, view, UserState,
     },
 };
 use scraper::tracker::run_tracker;
@@ -129,6 +131,22 @@ fn api_router(state: AppState) -> Router {
         .route(
             "/skip_match_selection",
             post(skip_match_selection).with_state(state.user.clone()),
+        )
+        // Filter management routes
+        .route("/filters", get(get_filters).post(create_filter))
+        .route(
+            "/filters/:id",
+            put(update_filter).delete(delete_filter),
+        )
+        .route("/filters/:id/toggle", post(toggle_filter))
+        // Show-specific filter routes
+        .route(
+            "/shows/:show_id/filters",
+            get(get_show_filters).post(create_show_filter),
+        )
+        .route(
+            "/shows/:show_id/filters/:filter_id",
+            delete(delete_show_filter),
         )
 }
 

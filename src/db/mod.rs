@@ -1,4 +1,5 @@
 pub mod config;
+pub mod filters;
 pub mod history;
 pub mod schema;
 pub mod shows;
@@ -66,6 +67,11 @@ where
 
 // Re-export commonly used types and functions
 pub use config::{get_rss_config, set_rss_enabled, update_last_poll_time, update_poll_interval};
+pub use filters::{
+    create_filter, create_show_filter, delete_filter, delete_show_filter, get_all_filters,
+    get_filter, get_global_filters, get_show_filters, toggle_filter, update_filter,
+    CreateFilterRule, FilterAction, FilterRule, FilterType, ShowFilterOverride, UpdateFilterRule,
+};
 pub use history::{get_show_history, is_already_downloaded, record_download};
 pub use schema::{init_database, migrate_from_json_if_needed};
 pub use shows::{

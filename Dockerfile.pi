@@ -1,0 +1,26 @@
+# Stage 1: Build (run on dev machine or CI)
+FROM rust:1.83-slim-bookworm AS builder
+
+RUN apt-get update && apt-get install -y \
+    gcc-aarch64-linux-gnu \
+    libc6-dev-arm64-cross \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY . .
+
+ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+RUN rustup target add aarch64-unknown-linux-gnu
+RUN cargo build --release --target aarch64-unknown-linux-gnu
+
+# Stage 2: Runtime (minimal ~5MB base)
+FROM gcr.io/distroless/cc-debian12:latest-arm64
+
+COPY --from=builder /app/target/aarch64-unknown-linux-gnu/release/web_scraper_subs_rust /app/
+COPY --from=builder /app/templates /app/templates
+COPY --from=builder /app/static /app/static
+
+WORKDIR /app
+EXPOSE 3000
+
+ENTRYPOINT ["/app/web_scraper_subs_rust"]

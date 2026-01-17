@@ -62,6 +62,43 @@ pub fn init_database(conn: &Connection) -> Result<()> {
     )
     .context("Failed to insert default RSS config")?;
 
+    // Create filter_rules table for Taiga-style filtering
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS filter_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            filter_type TEXT NOT NULL,
+            pattern TEXT NOT NULL,
+            action TEXT NOT NULL DEFAULT 'prefer',
+            priority INTEGER NOT NULL DEFAULT 0,
+            is_global INTEGER NOT NULL DEFAULT 1,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now'))
+        )",
+        [],
+    )
+    .context("Failed to create filter_rules table")?;
+
+    // Create show_filter_overrides table for per-show filter settings
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS show_filter_overrides (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            show_id INTEGER NOT NULL,
+            filter_rule_id INTEGER,
+            filter_type TEXT,
+            pattern TEXT,
+            action TEXT NOT NULL DEFAULT 'prefer',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY (show_id) REFERENCES shows(id) ON DELETE CASCADE,
+            FOREIGN KEY (filter_rule_id) REFERENCES filter_rules(id) ON DELETE CASCADE
+        )",
+        [],
+    )
+    .context("Failed to create show_filter_overrides table")?;
+
+    // Seed default filters if none exist
+    seed_default_filters(conn)?;
+
     Ok(())
 }
 
@@ -198,6 +235,40 @@ pub fn migrate_from_json_if_needed(conn: &Connection) -> Result<()> {
             .context("Failed to rename tracked_data.json to .bak")?;
         tracing::info!("Renamed tracked_data.json to tracked_data.json.bak");
     }
+
+    Ok(())
+}
+
+/// Seed default filter rules if none exist
+fn seed_default_filters(conn: &Connection) -> Result<()> {
+    // Check if any filters exist
+    let count: i32 = conn
+        .query_row("SELECT COUNT(*) FROM filter_rules", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    if count > 0 {
+        return Ok(());
+    }
+
+    tracing::info!("Seeding default filter rules...");
+
+    // Default filters based on Taiga guide
+    let default_filters = [
+        ("Prefer 1080p", "resolution", "1080p", "prefer", 10),
+        ("Prefer SubsPlease", "group", "SubsPlease", "prefer", 5),
+        ("Exclude batches", "title_exclude", "batch", "exclude", 100),
+    ];
+
+    for (name, filter_type, pattern, action, priority) in default_filters {
+        conn.execute(
+            "INSERT INTO filter_rules (name, filter_type, pattern, action, priority, is_global, enabled)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1, 1)",
+            rusqlite::params![name, filter_type, pattern, action, priority],
+        )
+        .with_context(|| format!("Failed to insert default filter: {}", name))?;
+    }
+
+    tracing::info!("Seeded {} default filter rules", default_filters.len());
 
     Ok(())
 }

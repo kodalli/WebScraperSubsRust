@@ -10,7 +10,8 @@ use tokio::time::sleep;
 
 use crate::db::{self, models::Show};
 
-use super::rss::{construct_magnet_url, fetch_rss_feed, parse_episode_info};
+use super::filter_engine::FilterEngine;
+use super::rss::{construct_magnet_url, fetch_rss_by_source, parse_episode_info, RssSource};
 use super::transmission::upload_to_transmission_rpc;
 
 /// Calculate the next run time based on RSS config
@@ -60,41 +61,72 @@ fn next_run_time_fallback() -> SystemTime {
     local_datetime.into()
 }
 
-/// Process a single show: fetch RSS, filter by quality, and download new episodes
+/// Process a single show: fetch RSS, apply filters, and download new episodes
 async fn process_show(show: &Show) -> Result<u32> {
     let mut downloaded_count = 0u32;
 
-    // Fetch RSS feed for this show
-    let rss_items = match fetch_rss_feed(&show.source, &show.alternate).await {
+    // Determine RSS source type from show.source field
+    let rss_source = RssSource::from_source_string(&show.source);
+
+    // Fetch RSS feed using appropriate source
+    let rss_items = match fetch_rss_by_source(
+        rss_source,
+        &show.source,
+        &show.alternate,
+        &show.quality,
+    )
+    .await
+    {
         Ok(items) => items,
         Err(e) => {
-            eprintln!(
-                "Failed to fetch RSS feed for '{}': {:?}",
-                show.alternate, e
+            tracing::error!(
+                "Failed to fetch RSS feed for '{}' (source: {:?}): {:?}",
+                show.alternate,
+                rss_source,
+                e
             );
             return Ok(0);
         }
     };
 
     if rss_items.is_empty() {
-        println!("No RSS items found for '{}'", show.alternate);
+        tracing::debug!("No RSS items found for '{}'", show.alternate);
         return Ok(0);
     }
 
-    // Filter by quality preference and collect owned items
-    let filtered_items: Vec<_> = rss_items
-        .iter()
-        .filter(|item| item.title.contains(&show.quality))
-        .cloned()
-        .collect();
+    tracing::debug!(
+        "Fetched {} RSS items for '{}' (source: {:?})",
+        rss_items.len(),
+        show.alternate,
+        rss_source
+    );
 
-    if filtered_items.is_empty() {
-        println!(
-            "No items matching quality '{}' for '{}'",
-            show.quality, show.alternate
+    // Load global filters from database
+    let global_filters = db::with_db(|conn| db::get_global_filters(conn)).await?;
+
+    // Load show-specific filter overrides
+    let show_id_for_filters = show.id;
+    let show_filters =
+        db::with_db(move |conn| db::get_show_filters(conn, show_id_for_filters)).await?;
+
+    // Create filter engine and apply filters
+    let engine = FilterEngine::new(global_filters, show_filters);
+    let filtered_results = engine.apply(rss_items);
+
+    if filtered_results.is_empty() {
+        tracing::debug!(
+            "No items passed filters for '{}' (quality: {})",
+            show.alternate,
+            show.quality
         );
         return Ok(0);
     }
+
+    tracing::debug!(
+        "{} items passed filters for '{}'",
+        filtered_results.len(),
+        show.alternate
+    );
 
     // Clone show data for use in closures (needed for 'static lifetime)
     let show_id = show.id;
@@ -107,13 +139,24 @@ async fn process_show(show: &Show) -> Result<u32> {
     let show_season = show.season;
     let last_downloaded_episode = show.last_downloaded_episode;
 
-    // Process each item
-    for item in filtered_items {
+    // Process items in score order (highest first)
+    for result in filtered_results {
+        let item = result.item;
+
+        // Log matched rules for debugging
+        if !result.matched_rules.is_empty() {
+            tracing::debug!(
+                "Item '{}' matched rules: {:?}",
+                item.title,
+                result.matched_rules
+            );
+        }
+
         // Parse episode information from the title
         let (_, episode, _) = match parse_episode_info(&item.title) {
             Some(info) => info,
             None => {
-                println!("Could not parse episode info from: {}", item.title);
+                tracing::debug!("Could not parse episode info from: {}", item.title);
                 continue;
             }
         };
@@ -124,33 +167,46 @@ async fn process_show(show: &Show) -> Result<u32> {
         }
 
         // Check if this specific torrent has already been downloaded (by hash)
-        let info_hash = item.info_hash.clone();
+        // For SubsPlease direct RSS, info_hash might be empty, so use torrent_link as fallback
+        let check_hash = if item.info_hash.is_empty() {
+            // Use a hash of the torrent link as a unique identifier
+            format!("subsplease:{}", item.torrent_link)
+        } else {
+            item.info_hash.clone()
+        };
+
+        let check_hash_clone = check_hash.clone();
         let already_downloaded = db::with_db(move |conn| {
-            db::history::is_already_downloaded(conn, &info_hash)
+            db::history::is_already_downloaded(conn, &check_hash_clone)
         })
         .await?;
 
         if already_downloaded {
-            println!("Already downloaded (by hash): {}", item.title);
+            tracing::debug!("Already downloaded (by hash): {}", item.title);
             continue;
         }
 
-        // Construct magnet URL for download
-        let magnet_url = construct_magnet_url(&item.info_hash, &item.title);
+        // Determine download URL: prefer magnet, fallback to torrent file
+        let download_url = if !item.info_hash.is_empty() {
+            construct_magnet_url(&item.info_hash, &item.title)
+        } else {
+            // For SubsPlease direct RSS, use the torrent URL directly
+            item.torrent_link.clone()
+        };
 
         // Upload to Transmission
         match upload_to_transmission_rpc(
-            vec![magnet_url.clone()],
+            vec![download_url.clone()],
             &show_alternate,
             Some(show_season),
         )
         .await
         {
             Ok(_) => {
-                println!("Downloaded: {}", item.title);
+                tracing::info!("Downloaded: {}", item.title);
 
                 // Clone values for the closure
-                let info_hash = item.info_hash.clone();
+                let record_hash = check_hash.clone();
                 let torrent_link = item.torrent_link.clone();
 
                 // Record the download in history
@@ -159,31 +215,29 @@ async fn process_show(show: &Show) -> Result<u32> {
                         conn,
                         show_id,
                         episode,
-                        &info_hash,
+                        &record_hash,
                         &torrent_link,
                     )
                 })
                 .await
                 {
-                    eprintln!("Failed to record download in history: {:?}", e);
+                    tracing::error!("Failed to record download in history: {:?}", e);
                 }
 
-                // Clone hash again for the second closure
-                let info_hash = item.info_hash.clone();
-
                 // Update show's last downloaded episode
+                let update_hash = check_hash.clone();
                 if let Err(e) = db::with_db(move |conn| {
-                    db::shows::update_last_downloaded(conn, show_id, episode, &info_hash)
+                    db::shows::update_last_downloaded(conn, show_id, episode, &update_hash)
                 })
                 .await
                 {
-                    eprintln!("Failed to update last downloaded episode: {:?}", e);
+                    tracing::error!("Failed to update last downloaded episode: {:?}", e);
                 }
 
                 downloaded_count += 1;
             }
             Err(e) => {
-                eprintln!("Failed to upload '{}' to Transmission: {:?}", item.title, e);
+                tracing::error!("Failed to upload '{}' to Transmission: {:?}", item.title, e);
             }
         }
     }
@@ -197,33 +251,38 @@ pub async fn download_shows() -> Result<()> {
     let shows = db::with_db(|conn| db::shows::get_tracked_shows(conn)).await?;
 
     if shows.is_empty() {
-        println!("No tracked shows found in database.");
+        tracing::info!("No tracked shows found in database.");
         return Ok(());
     }
 
-    println!("Processing {} tracked show(s)...", shows.len());
+    tracing::info!("Processing {} tracked show(s)...", shows.len());
 
     let mut total_downloaded = 0u32;
 
     for show in &shows {
-        println!("Checking: {} ({})", show.title, show.quality);
+        tracing::debug!(
+            "Checking: {} ({}) [source: {}]",
+            show.title,
+            show.quality,
+            show.source
+        );
 
         match process_show(show).await {
             Ok(count) => {
                 total_downloaded += count;
             }
             Err(e) => {
-                eprintln!("Error processing show '{}': {:?}", show.title, e);
+                tracing::error!("Error processing show '{}': {:?}", show.title, e);
             }
         }
     }
 
     // Update last poll time
     if let Err(e) = db::with_db(|conn| db::config::update_last_poll_time(conn)).await {
-        eprintln!("Failed to update last poll time: {:?}", e);
+        tracing::error!("Failed to update last poll time: {:?}", e);
     }
 
-    println!(
+    tracing::info!(
         "Poll complete. Downloaded {} new episode(s).",
         total_downloaded
     );
@@ -242,7 +301,7 @@ pub async fn run_tracker() {
         let (next_time, rss_enabled) = match calculate_next_run_time().await {
             Ok(result) => result,
             Err(e) => {
-                eprintln!("Failed to calculate next run time: {:?}", e);
+                tracing::error!("Failed to calculate next run time: {:?}", e);
                 // Fallback to fixed schedule on error
                 (next_run_time_fallback(), false)
             }
@@ -256,19 +315,20 @@ pub async fn run_tracker() {
             }
         };
 
-        let mode = if rss_enabled { "RSS interval" } else { "fallback (5AM/5PM)" };
-        println!(
-            "Next poll in {:?} ({} mode)",
-            wait_duration, mode
-        );
+        let mode = if rss_enabled {
+            "RSS interval"
+        } else {
+            "fallback (5AM/5PM)"
+        };
+        tracing::info!("Next poll in {:?} ({} mode)", wait_duration, mode);
 
         sleep(wait_duration).await;
 
-        println!("Starting download check at {:?}", Local::now());
+        tracing::info!("Starting download check at {:?}", Local::now());
 
         match download_shows().await {
-            Ok(_) => println!("Download check completed successfully."),
-            Err(e) => eprintln!("Download check failed: {:?}", e),
+            Ok(_) => tracing::info!("Download check completed successfully."),
+            Err(e) => tracing::error!("Download check failed: {:?}", e),
         }
     }
 }

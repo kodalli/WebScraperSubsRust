@@ -9,8 +9,7 @@ edition = "2024"
 anyhow = "1.0"
 axum = { version = "0.7", features = ["macros"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-thirtyfour = "0.36"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "net", "time"] }
 askama = { version = "0.12", features = ["with-axum"] }
 askama_axum = "0.4"
 tower = { version = "0.4", features = ["util"] }
@@ -25,3 +24,14 @@ regex = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 urlencoding = "2.1"
 quick-xml = "0.37"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.release-pi]
+inherits = "release"
+opt-level = "z"

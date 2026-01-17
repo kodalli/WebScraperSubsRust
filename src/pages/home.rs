@@ -992,6 +992,26 @@ pub async fn clear_transmission() -> impl IntoResponse {
     }
 }
 
+// ============================================================================
+// Filter Management API Endpoints
+// ============================================================================
+
+/// Get all global filters
+#[axum::debug_handler]
+pub async fn get_filters() -> impl IntoResponse {
+    match db::with_db(|conn| db::get_all_filters(conn)).await {
+        Ok(filters) => Json(filters).into_response(),
+        Err(err) => {
+            eprintln!("Failed to get filters: {:?}", err);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to get filters",
+            )
+                .into_response()
+        }
+    }
+}
+
 /// Search RSS feed and aggregate results by show title
 async fn search_rss_matches(source: &str, title: &str) -> Vec<MatchCandidate> {
     let rss_items = match fetch_rss_feed(source, title).await {
@@ -1227,6 +1247,261 @@ pub async fn skip_match_selection(
 
     // Return empty HTML with trigger to update the tracker table
     HtmlTemplate::new(EmptyTemplate).with_header("HX-Trigger", "newTrackerStatus")
+}
+
+/// Form data for creating a filter
+#[derive(Debug, Deserialize)]
+pub struct CreateFilterForm {
+    pub name: String,
+    pub filter_type: String,
+    pub pattern: String,
+    pub action: String,
+    #[serde(default)]
+    pub priority: i32,
+}
+
+/// Create a new filter
+#[axum::debug_handler]
+pub async fn create_filter(Form(payload): Form<CreateFilterForm>) -> impl IntoResponse {
+    let filter = db::CreateFilterRule {
+        name: payload.name,
+        filter_type: payload.filter_type,
+        pattern: payload.pattern,
+        action: payload.action,
+        priority: payload.priority,
+    };
+
+    match db::with_db(move |conn| db::create_filter(conn, &filter)).await {
+        Ok(id) => Json(serde_json::json!({"status": "ok", "id": id})).into_response(),
+        Err(err) => {
+            eprintln!("Failed to create filter: {:?}", err);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to create filter",
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Path parameter for filter ID
+#[derive(Debug, Deserialize)]
+pub struct FilterIdPath {
+    pub id: u32,
+}
+
+/// Form data for updating a filter
+#[derive(Debug, Deserialize)]
+pub struct UpdateFilterForm {
+    pub name: Option<String>,
+    pub filter_type: Option<String>,
+    pub pattern: Option<String>,
+    pub action: Option<String>,
+    pub priority: Option<i32>,
+    pub enabled: Option<bool>,
+}
+
+/// Update an existing filter
+#[axum::debug_handler]
+pub async fn update_filter(
+    axum::extract::Path(path): axum::extract::Path<FilterIdPath>,
+    Form(payload): Form<UpdateFilterForm>,
+) -> impl IntoResponse {
+    let update = db::UpdateFilterRule {
+        name: payload.name,
+        filter_type: payload.filter_type,
+        pattern: payload.pattern,
+        action: payload.action,
+        priority: payload.priority,
+        enabled: payload.enabled,
+    };
+
+    let filter_id = path.id;
+    match db::with_db(move |conn| db::update_filter(conn, filter_id, &update)).await {
+        Ok(updated) => {
+            if updated {
+                Json(serde_json::json!({"status": "ok"})).into_response()
+            } else {
+                (
+                    axum::http::StatusCode::NOT_FOUND,
+                    "Filter not found",
+                )
+                    .into_response()
+            }
+        }
+        Err(err) => {
+            eprintln!("Failed to update filter: {:?}", err);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to update filter",
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Delete a filter
+#[axum::debug_handler]
+pub async fn delete_filter(
+    axum::extract::Path(path): axum::extract::Path<FilterIdPath>,
+) -> impl IntoResponse {
+    let filter_id = path.id;
+    match db::with_db(move |conn| db::delete_filter(conn, filter_id)).await {
+        Ok(deleted) => {
+            if deleted {
+                Json(serde_json::json!({"status": "ok"})).into_response()
+            } else {
+                (
+                    axum::http::StatusCode::NOT_FOUND,
+                    "Filter not found",
+                )
+                    .into_response()
+            }
+        }
+        Err(err) => {
+            eprintln!("Failed to delete filter: {:?}", err);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to delete filter",
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Toggle a filter's enabled status
+#[axum::debug_handler]
+pub async fn toggle_filter(
+    axum::extract::Path(path): axum::extract::Path<FilterIdPath>,
+) -> impl IntoResponse {
+    let filter_id = path.id;
+    match db::with_db(move |conn| db::toggle_filter(conn, filter_id)).await {
+        Ok(toggled) => {
+            if toggled {
+                Json(serde_json::json!({"status": "ok"})).into_response()
+            } else {
+                (
+                    axum::http::StatusCode::NOT_FOUND,
+                    "Filter not found",
+                )
+                    .into_response()
+            }
+        }
+        Err(err) => {
+            eprintln!("Failed to toggle filter: {:?}", err);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to toggle filter",
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Path parameter for show ID (for show-specific filters)
+#[derive(Debug, Deserialize)]
+pub struct ShowIdPath {
+    pub show_id: u32,
+}
+
+/// Get show-specific filters
+#[axum::debug_handler]
+pub async fn get_show_filters(
+    axum::extract::Path(path): axum::extract::Path<ShowIdPath>,
+) -> impl IntoResponse {
+    let show_id = path.show_id;
+    match db::with_db(move |conn| db::get_show_filters(conn, show_id)).await {
+        Ok(filters) => Json(filters).into_response(),
+        Err(err) => {
+            eprintln!("Failed to get show filters: {:?}", err);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to get show filters",
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Form data for creating a show-specific filter
+#[derive(Debug, Deserialize)]
+pub struct CreateShowFilterForm {
+    pub filter_rule_id: Option<u32>,
+    pub filter_type: Option<String>,
+    pub pattern: Option<String>,
+    pub action: String,
+}
+
+/// Create a show-specific filter
+#[axum::debug_handler]
+pub async fn create_show_filter(
+    axum::extract::Path(path): axum::extract::Path<ShowIdPath>,
+    Form(payload): Form<CreateShowFilterForm>,
+) -> impl IntoResponse {
+    let show_id = path.show_id;
+    let filter_rule_id = payload.filter_rule_id;
+    let filter_type = payload.filter_type;
+    let pattern = payload.pattern;
+    let action = payload.action;
+
+    match db::with_db(move |conn| {
+        db::create_show_filter(
+            conn,
+            show_id,
+            filter_rule_id,
+            filter_type.as_deref(),
+            pattern.as_deref(),
+            &action,
+        )
+    })
+    .await
+    {
+        Ok(id) => Json(serde_json::json!({"status": "ok", "id": id})).into_response(),
+        Err(err) => {
+            eprintln!("Failed to create show filter: {:?}", err);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to create show filter",
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Path parameter for show filter ID
+#[derive(Debug, Deserialize)]
+pub struct ShowFilterIdPath {
+    pub show_id: u32,
+    pub filter_id: u32,
+}
+
+/// Delete a show-specific filter
+#[axum::debug_handler]
+pub async fn delete_show_filter(
+    axum::extract::Path(path): axum::extract::Path<ShowFilterIdPath>,
+) -> impl IntoResponse {
+    let filter_id = path.filter_id;
+    match db::with_db(move |conn| db::delete_show_filter(conn, filter_id)).await {
+        Ok(deleted) => {
+            if deleted {
+                Json(serde_json::json!({"status": "ok"})).into_response()
+            } else {
+                (
+                    axum::http::StatusCode::NOT_FOUND,
+                    "Show filter not found",
+                )
+                    .into_response()
+            }
+        }
+        Err(err) => {
+            eprintln!("Failed to delete show filter: {:?}", err);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to delete show filter",
+            )
+                .into_response()
+        }
+    }
 }
 
 

@@ -1,12 +1,33 @@
-//! RSS feed parser for Nyaa.si
+//! RSS feed parser for Nyaa.si and SubsPlease
 //!
-//! This module provides functionality to fetch and parse RSS feeds from nyaa.si,
-//! extracting torrent information including episode details, quality, and magnet links.
+//! This module provides functionality to fetch and parse RSS feeds from nyaa.si
+//! and subsplease.org, extracting torrent information including episode details,
+//! quality, and magnet links.
 
 use anyhow::{Context, Result};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
+
+/// RSS source type for fetching torrents
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RssSource {
+    /// Nyaa.si RSS - searches with source + title query
+    Nyaa,
+    /// SubsPlease direct RSS - fetches all releases at specified quality
+    SubsPleaseDirect,
+}
+
+impl RssSource {
+    pub fn from_source_string(source: &str) -> Self {
+        match source.to_lowercase().as_str() {
+            "subsplease_direct" => RssSource::SubsPleaseDirect,
+            _ => RssSource::Nyaa,
+        }
+    }
+}
 
 /// Represents a single item from the Nyaa RSS feed
 #[derive(Debug, Clone)]
@@ -64,6 +85,195 @@ pub async fn fetch_rss_feed(source: &str, alternate: &str) -> Result<Vec<RssItem
         .with_context(|| "Failed to read response body")?;
 
     parse_rss_xml(&xml)
+}
+
+/// Fetches RSS feed from SubsPlease.org
+///
+/// SubsPlease provides a direct RSS feed at `subsplease.org/rss/?t&r={quality}`
+/// that contains all their releases at the specified quality.
+///
+/// # Arguments
+/// * `quality` - Quality filter: "1080", "720", or "480" (without 'p' suffix)
+///
+/// # Returns
+/// A vector of `RssItem` parsed from the feed
+///
+/// # Example
+/// ```ignore
+/// let items = fetch_subsplease_rss("1080").await?;
+/// ```
+pub async fn fetch_subsplease_rss(quality: &str) -> Result<Vec<RssItem>> {
+    // SubsPlease uses quality without 'p' suffix in their RSS URL
+    let quality_param = quality.trim_end_matches('p');
+    let url = format!("https://subsplease.org/rss/?t&r={}", quality_param);
+
+    let response = reqwest::get(&url)
+        .await
+        .with_context(|| format!("Failed to fetch SubsPlease RSS feed from {}", url))?;
+
+    let xml = response
+        .text()
+        .await
+        .with_context(|| "Failed to read SubsPlease response body")?;
+
+    parse_subsplease_rss_xml(&xml)
+}
+
+/// Fetches RSS items using the appropriate source
+///
+/// # Arguments
+/// * `source` - The RSS source type (Nyaa or SubsPleaseDirect)
+/// * `source_name` - For Nyaa: the uploader name; for SubsPlease: ignored
+/// * `show_name` - The show name to search/filter for
+/// * `quality` - Quality preference (e.g., "1080p")
+///
+/// # Returns
+/// A vector of `RssItem` matching the criteria
+pub async fn fetch_rss_by_source(
+    source: RssSource,
+    source_name: &str,
+    show_name: &str,
+    quality: &str,
+) -> Result<Vec<RssItem>> {
+    match source {
+        RssSource::Nyaa => {
+            // Nyaa: search with source + show name
+            fetch_rss_feed(source_name, show_name).await
+        }
+        RssSource::SubsPleaseDirect => {
+            // SubsPlease: fetch all at quality, then filter by show name
+            let all_items = fetch_subsplease_rss(quality).await?;
+
+            // Filter items that match the show name (case-insensitive)
+            let show_lower = show_name.to_lowercase();
+            let filtered: Vec<RssItem> = all_items
+                .into_iter()
+                .filter(|item| {
+                    let title_lower = item.title.to_lowercase();
+                    // Check if the show name appears in the title
+                    title_lower.contains(&show_lower)
+                })
+                .collect();
+
+            Ok(filtered)
+        }
+    }
+}
+
+/// Parses SubsPlease RSS XML content into a vector of RssItem
+///
+/// SubsPlease RSS has a simpler format than Nyaa - it doesn't include
+/// nyaa: namespaced elements. The link points to a nyaa.si page.
+///
+/// # Arguments
+/// * `xml` - The raw XML string from the SubsPlease RSS feed
+///
+/// # Returns
+/// A vector of parsed `RssItem` structs
+pub fn parse_subsplease_rss_xml(xml: &str) -> Result<Vec<RssItem>> {
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(true);
+
+    let mut items = Vec::new();
+    let mut buf = Vec::new();
+
+    let mut current_item: Option<SubsPleaseItemBuilder> = None;
+    let mut current_element: Option<String> = None;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+
+                match name.as_str() {
+                    "item" => {
+                        current_item = Some(SubsPleaseItemBuilder::default());
+                    }
+                    _ => {
+                        current_element = Some(name);
+                    }
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+
+                if name == "item" {
+                    if let Some(builder) = current_item.take() {
+                        if let Some(item) = builder.build() {
+                            items.push(item);
+                        }
+                    }
+                }
+                current_element = None;
+            }
+            Ok(Event::Text(ref e)) => {
+                if let (Some(item), Some(element)) = (&mut current_item, &current_element) {
+                    let text = e.unescape().unwrap_or_default().to_string();
+                    if !text.is_empty() {
+                        match element.as_str() {
+                            "title" => item.title = Some(text),
+                            "link" => item.link = Some(text),
+                            "guid" => item.guid = Some(text),
+                            "pubDate" => item.pub_date = Some(text),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Error parsing SubsPlease XML at position {}: {:?}",
+                    reader.buffer_position(),
+                    e
+                ));
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    Ok(items)
+}
+
+/// Builder for SubsPlease RSS items
+#[derive(Default)]
+struct SubsPleaseItemBuilder {
+    title: Option<String>,
+    link: Option<String>,
+    guid: Option<String>,
+    pub_date: Option<String>,
+}
+
+impl SubsPleaseItemBuilder {
+    fn build(self) -> Option<RssItem> {
+        let title = self.title?;
+        let link = self.link.unwrap_or_default();
+
+        // SubsPlease links point to nyaa.si, extract torrent URL
+        // Link format: https://nyaa.si/view/ID
+        let (torrent_link, view_url, info_hash) = if link.contains("nyaa.si/view/") {
+            // Extract ID and construct torrent URL
+            let id = link.split('/').last().unwrap_or("");
+            let torrent_url = format!("https://nyaa.si/download/{}.torrent", id);
+            (torrent_url, link.clone(), String::new())
+        } else {
+            // Fallback: use the link as-is
+            (link.clone(), link, String::new())
+        };
+
+        Some(RssItem {
+            title,
+            torrent_link,
+            view_url,
+            pub_date: self.pub_date.unwrap_or_default(),
+            info_hash,
+            category_id: "1_2".to_string(), // Anime - English-translated
+            size: String::new(),
+            seeders: 0,
+            leechers: 0,
+        })
+    }
 }
 
 /// Parses RSS XML content into a vector of RssItem
@@ -491,6 +701,96 @@ mod tests {
                 "  - {} Episode {} ({})",
                 ep.show_title, ep.episode, ep.quality
             );
+        }
+    }
+
+    // SubsPlease RSS tests
+
+    const SAMPLE_SUBSPLEASE_RSS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>SubsPlease RSS</title>
+    <item>
+      <title>[SubsPlease] One Piece - 1100 (1080p) [ABC123].mkv</title>
+      <link>https://nyaa.si/view/1234567</link>
+      <guid>https://nyaa.si/view/1234567</guid>
+      <pubDate>Thu, 16 Jan 2026 12:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>[SubsPlease] Frieren - 28 (1080p) [DEF456].mkv</title>
+      <link>https://nyaa.si/view/1234568</link>
+      <guid>https://nyaa.si/view/1234568</guid>
+      <pubDate>Thu, 16 Jan 2026 11:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>[SubsPlease] Blue Lock - 24 (1080p) [GHI789].mkv</title>
+      <link>https://nyaa.si/view/1234569</link>
+      <guid>https://nyaa.si/view/1234569</guid>
+      <pubDate>Thu, 16 Jan 2026 10:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>"#;
+
+    #[test]
+    fn test_parse_subsplease_rss_xml() {
+        let items = parse_subsplease_rss_xml(SAMPLE_SUBSPLEASE_RSS).unwrap();
+
+        assert_eq!(items.len(), 3);
+
+        let first = &items[0];
+        assert_eq!(
+            first.title,
+            "[SubsPlease] One Piece - 1100 (1080p) [ABC123].mkv"
+        );
+        assert_eq!(
+            first.torrent_link,
+            "https://nyaa.si/download/1234567.torrent"
+        );
+        assert_eq!(first.view_url, "https://nyaa.si/view/1234567");
+    }
+
+    #[test]
+    fn test_rss_source_from_string() {
+        assert_eq!(
+            RssSource::from_source_string("subsplease_direct"),
+            RssSource::SubsPleaseDirect
+        );
+        assert_eq!(
+            RssSource::from_source_string("SUBSPLEASE_DIRECT"),
+            RssSource::SubsPleaseDirect
+        );
+        assert_eq!(
+            RssSource::from_source_string("subsplease"),
+            RssSource::Nyaa
+        );
+        assert_eq!(RssSource::from_source_string("erai-raws"), RssSource::Nyaa);
+        assert_eq!(RssSource::from_source_string(""), RssSource::Nyaa);
+    }
+
+    #[ignore]
+    #[tokio::test]
+    async fn test_fetch_subsplease_rss_live() {
+        // Integration test - requires network access
+        let items = fetch_subsplease_rss("1080").await;
+        assert!(items.is_ok());
+        let items = items.unwrap();
+        println!("Fetched {} items from SubsPlease", items.len());
+        for item in items.iter().take(5) {
+            println!("  - {}", item.title);
+        }
+    }
+
+    #[ignore]
+    #[tokio::test]
+    async fn test_fetch_rss_by_source_subsplease_live() {
+        // Integration test - requires network access
+        let items =
+            fetch_rss_by_source(RssSource::SubsPleaseDirect, "", "One Piece", "1080p").await;
+        assert!(items.is_ok());
+        let items = items.unwrap();
+        println!("Fetched {} One Piece items from SubsPlease", items.len());
+        for item in &items {
+            println!("  - {}", item.title);
         }
     }
 }
