@@ -4,7 +4,9 @@ use crate::{
     scraper::{
         anilist::{get_anilist_all_airing, get_anilist_data, AniShow, NextAiringEpisode, Season},
         nyaasi::{fetch_sources, Link},
-        transmission::upload_to_transmission_rpc,
+        rss::{fetch_rss_feed, parse_episode_info},
+        season_parser::detect_season,
+        transmission::{clear_all_torrents, upload_to_transmission_rpc},
     },
 };
 use askama::Template;
@@ -164,6 +166,58 @@ pub struct ConfigureTemplate {
     pub download_path: Option<String>,
     pub last_downloaded_episode: u16,
 }
+
+/// Represents a potential match from RSS/nyaasi search
+#[derive(Debug, Clone, Serialize)]
+pub struct MatchCandidate {
+    pub show_title: String,
+    pub episode_count: u16,
+    pub quality: String,
+    pub latest_episode: u16,
+}
+
+#[derive(Template)]
+#[template(path = "components/match_selection.html")]
+pub struct MatchSelectionTemplate {
+    pub original_title: String,
+    pub show_id: u32,
+    pub matches: Vec<MatchCandidate>,
+    pub source: String,
+    pub fallback_available: bool,
+    pub latest_episode: String,
+    pub next_air_date: String,
+}
+
+#[derive(Deserialize)]
+pub struct SearchMatchesQuery {
+    pub id: u32,
+    pub title: String,
+    pub source: String,
+    pub latest_episode: String,
+    pub next_air_date: String,
+}
+
+#[derive(Deserialize)]
+pub struct ConfirmMatchQuery {
+    pub id: u32,
+    pub title: String,
+    pub alternate: String,
+    pub latest_episode: String,
+    pub next_air_date: String,
+}
+
+#[derive(Deserialize)]
+pub struct SkipMatchQuery {
+    pub id: u32,
+    pub title: String,
+    pub latest_episode: String,
+    pub next_air_date: String,
+}
+
+/// Empty template for returning just headers
+#[derive(Template)]
+#[template(source = "", ext = "html")]
+pub struct EmptyTemplate;
 
 async fn get_seasonal(season: Season, year: u16) -> anyhow::Result<Vec<AniShow>> {
     match get_anilist_data(season, year).await {
@@ -450,35 +504,221 @@ pub async fn set_tracker(
     let mut new_payload = payload.clone();
     new_payload.is_tracked = !new_payload.is_tracked;
 
-    // Update in-memory state
-    if new_payload.is_tracked {
-        lock.tracker.insert(new_payload.id, new_payload.clone());
-    } else {
+    // If untracking, just update and return
+    if !new_payload.is_tracked {
         lock.tracker.remove(&new_payload.id);
+
+        let show_id = new_payload.id;
+        let latest_episode = new_payload.latest_episode.clone();
+        let next_air_date = new_payload.next_air_date.clone();
+
+        let db_result = db::with_db(move |conn| {
+            if let Some(mut existing_show) = db::get_show(conn, show_id)? {
+                existing_show.is_tracked = false;
+                existing_show.latest_episode = Some(latest_episode);
+                existing_show.next_air_date = Some(next_air_date);
+                db::update_show(conn, &existing_show)?;
+            }
+            Ok(())
+        })
+        .await;
+
+        if let Err(err) = db_result {
+            eprintln!("Could not save to database: {:?}", err);
+        }
+
+        let template = TrackedTemplate { entry: new_payload };
+        return HtmlTemplate::new(template)
+            .with_header("HX-Trigger", "newTrackerStatus")
+            .into_response();
     }
 
-    // Save to database
+    // When tracking, search for matches first
+    // Drop the lock before async operations
+    drop(lock);
+
+    let title = new_payload.title.clone();
+
+    // Search SubsPlease RSS first
+    let matches = search_rss_matches("subsplease", &title).await;
+
+    // Check for exact match
+    if let Some(exact_match) = has_exact_match(&title, &matches) {
+        // Exact match found - save directly with matched title as alternate
+        let mut lock = state.lock().await;
+        lock.tracker.insert(new_payload.id, new_payload.clone());
+
+        // Auto-detect season from the matched title
+        let season_info = detect_season(&exact_match);
+        let detected_season = season_info.season;
+
+        let show_id = new_payload.id;
+        let orig_title = new_payload.title.clone();
+        let latest_episode = new_payload.latest_episode.clone();
+        let next_air_date = new_payload.next_air_date.clone();
+
+        let db_result = db::with_db(move |conn| {
+            if let Some(mut existing_show) = db::get_show(conn, show_id)? {
+                existing_show.is_tracked = true;
+                existing_show.alternate = exact_match;
+                existing_show.season = detected_season;
+                existing_show.latest_episode = Some(latest_episode);
+                existing_show.next_air_date = Some(next_air_date);
+                db::update_show(conn, &existing_show)?;
+            } else {
+                let new_show = Show {
+                    id: show_id,
+                    title: orig_title,
+                    alternate: exact_match,
+                    season: detected_season,
+                    source: "subsplease".to_string(),
+                    quality: "1080p".to_string(),
+                    download_path: None,
+                    last_downloaded_episode: 0,
+                    last_downloaded_hash: None,
+                    is_tracked: true,
+                    latest_episode: Some(latest_episode),
+                    next_air_date: Some(next_air_date),
+                    created_at: None,
+                    updated_at: None,
+                };
+                db::insert_show(conn, &new_show)?;
+            }
+            Ok(())
+        })
+        .await;
+
+        if let Err(err) = db_result {
+            eprintln!("Could not save to database: {:?}", err);
+        }
+
+        let template = TrackedTemplate { entry: new_payload };
+        return HtmlTemplate::new(template)
+            .with_header("HX-Trigger", "newTrackerStatus")
+            .into_response();
+    }
+
+    // No exact match - check if we have partial matches or need to search Nyaa.si
+    if !matches.is_empty() {
+        // Show modal with SubsPlease matches
+        let template = MatchSelectionTemplate {
+            original_title: new_payload.title.clone(),
+            show_id: new_payload.id,
+            matches,
+            source: "subsplease".to_string(),
+            fallback_available: true,
+            latest_episode: new_payload.latest_episode.clone(),
+            next_air_date: new_payload.next_air_date.clone(),
+        };
+
+        return HtmlTemplate::new(template)
+            .with_header("HX-Retarget", "#configuration-modal")
+            .with_header("HX-Reswap", "innerHTML")
+            .into_response();
+    }
+
+    // No SubsPlease results - try Nyaa.si
+    let nyaasi_matches = search_nyaasi_matches(&title).await;
+
+    if !nyaasi_matches.is_empty() {
+        // Check for exact match in Nyaa.si results
+        if let Some(exact_match) = has_exact_match(&title, &nyaasi_matches) {
+            let mut lock = state.lock().await;
+            lock.tracker.insert(new_payload.id, new_payload.clone());
+
+            // Auto-detect season from the matched title
+            let season_info = detect_season(&exact_match);
+            let detected_season = season_info.season;
+
+            let show_id = new_payload.id;
+            let orig_title = new_payload.title.clone();
+            let latest_episode = new_payload.latest_episode.clone();
+            let next_air_date = new_payload.next_air_date.clone();
+
+            let db_result = db::with_db(move |conn| {
+                if let Some(mut existing_show) = db::get_show(conn, show_id)? {
+                    existing_show.is_tracked = true;
+                    existing_show.alternate = exact_match;
+                    existing_show.season = detected_season;
+                    existing_show.latest_episode = Some(latest_episode);
+                    existing_show.next_air_date = Some(next_air_date);
+                    db::update_show(conn, &existing_show)?;
+                } else {
+                    let new_show = Show {
+                        id: show_id,
+                        title: orig_title,
+                        alternate: exact_match,
+                        season: detected_season,
+                        source: "subsplease".to_string(),
+                        quality: "1080p".to_string(),
+                        download_path: None,
+                        last_downloaded_episode: 0,
+                        last_downloaded_hash: None,
+                        is_tracked: true,
+                        latest_episode: Some(latest_episode),
+                        next_air_date: Some(next_air_date),
+                        created_at: None,
+                        updated_at: None,
+                    };
+                    db::insert_show(conn, &new_show)?;
+                }
+                Ok(())
+            })
+            .await;
+
+            if let Err(err) = db_result {
+                eprintln!("Could not save to database: {:?}", err);
+            }
+
+            let template = TrackedTemplate { entry: new_payload };
+            return HtmlTemplate::new(template)
+                .with_header("HX-Trigger", "newTrackerStatus")
+                .into_response();
+        }
+
+        // Show modal with Nyaa.si matches
+        let template = MatchSelectionTemplate {
+            original_title: new_payload.title.clone(),
+            show_id: new_payload.id,
+            matches: nyaasi_matches,
+            source: "nyaasi".to_string(),
+            fallback_available: false,
+            latest_episode: new_payload.latest_episode.clone(),
+            next_air_date: new_payload.next_air_date.clone(),
+        };
+
+        return HtmlTemplate::new(template)
+            .with_header("HX-Retarget", "#configuration-modal")
+            .with_header("HX-Reswap", "innerHTML")
+            .into_response();
+    }
+
+    // No results anywhere - save with original title
+    let mut lock = state.lock().await;
+    lock.tracker.insert(new_payload.id, new_payload.clone());
+
+    // Auto-detect season from the title
+    let season_info = detect_season(&new_payload.title);
+    let detected_season = season_info.season;
+
     let show_id = new_payload.id;
-    let is_tracked = new_payload.is_tracked;
     let title = new_payload.title.clone();
     let latest_episode = new_payload.latest_episode.clone();
     let next_air_date = new_payload.next_air_date.clone();
 
     let db_result = db::with_db(move |conn| {
-        // Check if show exists in database
         if let Some(mut existing_show) = db::get_show(conn, show_id)? {
-            // Update existing show's tracked status
-            existing_show.is_tracked = is_tracked;
-            existing_show.latest_episode = Some(latest_episode.clone());
-            existing_show.next_air_date = Some(next_air_date.clone());
+            existing_show.is_tracked = true;
+            existing_show.season = detected_season;
+            existing_show.latest_episode = Some(latest_episode);
+            existing_show.next_air_date = Some(next_air_date);
             db::update_show(conn, &existing_show)?;
-        } else if is_tracked {
-            // Insert new show if it's being tracked
+        } else {
             let new_show = Show {
                 id: show_id,
-                title,
-                alternate: String::new(),
-                season: 1,
+                title: title.clone(),
+                alternate: title,
+                season: detected_season,
                 source: "subsplease".to_string(),
                 quality: "1080p".to_string(),
                 download_path: None,
@@ -501,7 +741,9 @@ pub async fn set_tracker(
     }
 
     let template = TrackedTemplate { entry: new_payload };
-    HtmlTemplate::new(template).with_header("HX-Trigger", "newTrackerStatus")
+    HtmlTemplate::new(template)
+        .with_header("HX-Trigger", "newTrackerStatus")
+        .into_response()
 }
 
 #[axum::debug_handler]
@@ -676,6 +918,19 @@ pub async fn close() -> impl IntoResponse {
     Html("")
 }
 
+#[axum::debug_handler]
+pub async fn sync_now() -> impl IntoResponse {
+    use crate::scraper::tracker::download_shows;
+
+    match download_shows().await {
+        Ok(_) => Html("<span class=\"text-green-400\">Sync complete!</span>".to_string()),
+        Err(e) => {
+            eprintln!("Sync failed: {:?}", e);
+            Html("<span class=\"text-red-400\">Sync failed</span>".to_string())
+        }
+    }
+}
+
 /// Get the current RSS configuration
 #[axum::debug_handler]
 pub async fn get_rss_config() -> impl IntoResponse {
@@ -715,6 +970,263 @@ pub async fn save_rss_config(Form(payload): Form<RssConfigForm>) -> impl IntoRes
                 .into_response()
         }
     }
+}
+
+/// Clear all torrents from Transmission and delete their files
+#[axum::debug_handler]
+pub async fn clear_transmission() -> impl IntoResponse {
+    match clear_all_torrents(true).await {
+        Ok(count) => {
+            Html(format!(
+                "<span class=\"text-green-400\">Removed {} torrent(s) and deleted files</span>",
+                count
+            ))
+        }
+        Err(e) => {
+            eprintln!("Failed to clear Transmission: {:?}", e);
+            Html(format!(
+                "<span class=\"text-red-400\">Failed: {}</span>",
+                e
+            ))
+        }
+    }
+}
+
+/// Search RSS feed and aggregate results by show title
+async fn search_rss_matches(source: &str, title: &str) -> Vec<MatchCandidate> {
+    let rss_items = match fetch_rss_feed(source, title).await {
+        Ok(items) => items,
+        Err(e) => {
+            eprintln!("Failed to fetch RSS feed for '{}': {:?}", title, e);
+            return Vec::new();
+        }
+    };
+
+    // Group by show title
+    let mut show_map: HashMap<String, (u16, u16, String)> = HashMap::new(); // (count, latest_episode, quality)
+
+    for item in &rss_items {
+        if let Some((show_title, episode, quality)) = parse_episode_info(&item.title) {
+            let entry = show_map.entry(show_title).or_insert((0, 0, quality.clone()));
+            entry.0 += 1; // increment count
+            if episode > entry.1 {
+                entry.1 = episode; // track latest episode
+            }
+            if entry.2.is_empty() {
+                entry.2 = quality;
+            }
+        }
+    }
+
+    show_map
+        .into_iter()
+        .map(|(show_title, (episode_count, latest_episode, quality))| MatchCandidate {
+            show_title,
+            episode_count,
+            latest_episode,
+            quality,
+        })
+        .collect()
+}
+
+/// Search Nyaa.si HTTP and aggregate results by show title
+async fn search_nyaasi_matches(title: &str) -> Vec<MatchCandidate> {
+    let links = match fetch_sources(title, "default").await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Failed to fetch Nyaa.si for '{}': {:?}", title, e);
+            return Vec::new();
+        }
+    };
+
+    // Group by show title
+    let mut show_map: HashMap<String, (u16, u16)> = HashMap::new(); // (count, latest_episode)
+
+    for link in &links {
+        let episode: u16 = link.episode.parse().unwrap_or(0);
+        let entry = show_map.entry(link.title.clone()).or_insert((0, 0));
+        entry.0 += 1;
+        if episode > entry.1 {
+            entry.1 = episode;
+        }
+    }
+
+    show_map
+        .into_iter()
+        .map(|(show_title, (episode_count, latest_episode))| MatchCandidate {
+            show_title,
+            episode_count,
+            latest_episode,
+            quality: "1080p".to_string(), // Nyaa.si results are pre-filtered to 1080p
+        })
+        .collect()
+}
+
+/// Check if any match equals the title (case-insensitive)
+fn has_exact_match(title: &str, matches: &[MatchCandidate]) -> Option<String> {
+    let title_lower = title.to_lowercase();
+    matches
+        .iter()
+        .find(|m| m.show_title.to_lowercase() == title_lower)
+        .map(|m| m.show_title.clone())
+}
+
+/// Handler to search for matches (called when user clicks "Search Nyaa.si Instead")
+#[axum::debug_handler]
+pub async fn search_matches(Query(payload): Query<SearchMatchesQuery>) -> impl IntoResponse {
+    let matches = if payload.source == "nyaasi" {
+        search_nyaasi_matches(&payload.title).await
+    } else {
+        search_rss_matches(&payload.source, &payload.title).await
+    };
+
+    let fallback_available = payload.source != "nyaasi";
+
+    let template = MatchSelectionTemplate {
+        original_title: payload.title,
+        show_id: payload.id,
+        matches,
+        source: payload.source,
+        fallback_available,
+        latest_episode: payload.latest_episode,
+        next_air_date: payload.next_air_date,
+    };
+
+    HtmlTemplate::new(template)
+}
+
+/// Save show with selected alternate name
+#[axum::debug_handler]
+pub async fn confirm_match(
+    State(state): State<Arc<Mutex<UserState>>>,
+    Query(payload): Query<ConfirmMatchQuery>,
+) -> impl IntoResponse {
+    let mut lock = state.lock().await;
+
+    // Update in-memory state
+    let entry = TableEntry {
+        title: payload.title.clone(),
+        latest_episode: payload.latest_episode.clone(),
+        next_air_date: payload.next_air_date.clone(),
+        is_tracked: true,
+        id: payload.id,
+    };
+    lock.tracker.insert(payload.id, entry);
+
+    // Auto-detect season from the alternate title
+    let season_info = detect_season(&payload.alternate);
+    let detected_season = season_info.season;
+
+    // Save to database with the selected alternate name
+    let show_id = payload.id;
+    let title = payload.title.clone();
+    let alternate = payload.alternate.clone();
+    let latest_episode = payload.latest_episode.clone();
+    let next_air_date = payload.next_air_date.clone();
+
+    let db_result = db::with_db(move |conn| {
+        if let Some(mut existing_show) = db::get_show(conn, show_id)? {
+            existing_show.is_tracked = true;
+            existing_show.alternate = alternate;
+            existing_show.season = detected_season;
+            existing_show.latest_episode = Some(latest_episode);
+            existing_show.next_air_date = Some(next_air_date);
+            db::update_show(conn, &existing_show)?;
+        } else {
+            let new_show = Show {
+                id: show_id,
+                title,
+                alternate,
+                season: detected_season,
+                source: "subsplease".to_string(),
+                quality: "1080p".to_string(),
+                download_path: None,
+                last_downloaded_episode: 0,
+                last_downloaded_hash: None,
+                is_tracked: true,
+                latest_episode: Some(latest_episode),
+                next_air_date: Some(next_air_date),
+                created_at: None,
+                updated_at: None,
+            };
+            db::insert_show(conn, &new_show)?;
+        }
+        Ok(())
+    })
+    .await;
+
+    if let Err(err) = db_result {
+        eprintln!("Could not save to database: {:?}", err);
+    }
+
+    // Return empty HTML with trigger to update the tracker table
+    HtmlTemplate::new(EmptyTemplate).with_header("HX-Trigger", "newTrackerStatus")
+}
+
+/// Skip match selection - track with original title
+#[axum::debug_handler]
+pub async fn skip_match_selection(
+    State(state): State<Arc<Mutex<UserState>>>,
+    Query(payload): Query<SkipMatchQuery>,
+) -> impl IntoResponse {
+    let mut lock = state.lock().await;
+
+    // Update in-memory state
+    let entry = TableEntry {
+        title: payload.title.clone(),
+        latest_episode: payload.latest_episode.clone(),
+        next_air_date: payload.next_air_date.clone(),
+        is_tracked: true,
+        id: payload.id,
+    };
+    lock.tracker.insert(payload.id, entry);
+
+    // Auto-detect season from the title
+    let season_info = detect_season(&payload.title);
+    let detected_season = season_info.season;
+
+    // Save to database with original title as alternate
+    let show_id = payload.id;
+    let title = payload.title.clone();
+    let latest_episode = payload.latest_episode.clone();
+    let next_air_date = payload.next_air_date.clone();
+
+    let db_result = db::with_db(move |conn| {
+        if let Some(mut existing_show) = db::get_show(conn, show_id)? {
+            existing_show.is_tracked = true;
+            existing_show.season = detected_season;
+            existing_show.latest_episode = Some(latest_episode);
+            existing_show.next_air_date = Some(next_air_date);
+            db::update_show(conn, &existing_show)?;
+        } else {
+            let new_show = Show {
+                id: show_id,
+                title: title.clone(),
+                alternate: title,
+                season: detected_season,
+                source: "subsplease".to_string(),
+                quality: "1080p".to_string(),
+                download_path: None,
+                last_downloaded_episode: 0,
+                last_downloaded_hash: None,
+                is_tracked: true,
+                latest_episode: Some(latest_episode),
+                next_air_date: Some(next_air_date),
+                created_at: None,
+                updated_at: None,
+            };
+            db::insert_show(conn, &new_show)?;
+        }
+        Ok(())
+    })
+    .await;
+
+    if let Err(err) = db_result {
+        eprintln!("Could not save to database: {:?}", err);
+    }
+
+    // Return empty HTML with trigger to update the tracker table
+    HtmlTemplate::new(EmptyTemplate).with_header("HX-Trigger", "newTrackerStatus")
 }
 
 

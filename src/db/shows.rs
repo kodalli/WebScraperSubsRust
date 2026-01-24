@@ -190,11 +190,12 @@ pub fn delete_show(conn: &Connection, id: u32) -> Result<()> {
 }
 
 /// Update the last downloaded episode and hash for a show
+/// Only updates if the new episode number is higher than the current value
 pub fn update_last_downloaded(conn: &Connection, id: u32, episode: u16, hash: &str) -> Result<()> {
     conn.execute(
         "UPDATE shows SET
-            last_downloaded_episode = ?2,
-            last_downloaded_hash = ?3,
+            last_downloaded_episode = MAX(last_downloaded_episode, ?2),
+            last_downloaded_hash = CASE WHEN ?2 > last_downloaded_episode THEN ?3 ELSE last_downloaded_hash END,
             updated_at = datetime('now')
          WHERE id = ?1",
         params![id, episode as i32, hash],

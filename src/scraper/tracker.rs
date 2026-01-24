@@ -98,7 +98,12 @@ async fn process_show(show: &Show) -> Result<u32> {
 
     // Clone show data for use in closures (needed for 'static lifetime)
     let show_id = show.id;
-    let show_alternate = show.alternate.clone();
+    // Use title as fallback if alternate is empty
+    let show_alternate = if show.alternate.is_empty() {
+        show.title.clone()
+    } else {
+        show.alternate.clone()
+    };
     let show_season = show.season;
     let last_downloaded_episode = show.last_downloaded_episode;
 
@@ -187,7 +192,7 @@ async fn process_show(show: &Show) -> Result<u32> {
 }
 
 /// Download shows for all tracked entries using RSS feeds
-async fn download_shows() -> Result<()> {
+pub async fn download_shows() -> Result<()> {
     // Get all tracked shows from SQLite
     let shows = db::with_db(|conn| db::shows::get_tracked_shows(conn)).await?;
 

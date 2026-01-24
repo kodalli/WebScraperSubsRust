@@ -13,9 +13,10 @@ use axum::{
 use pages::{
     anime::seasonal_anime,
     home::{
-        close, currently_airing_anime, download_from_link, get_configuration, get_rss_config,
-        get_source, navigate_seasonal_anime, save_configuration, save_rss_config, search_source,
-        set_tracker, show_table, update_user, view, UserState,
+        clear_transmission, close, confirm_match, currently_airing_anime, download_from_link,
+        get_configuration, get_rss_config, get_source, navigate_seasonal_anime, save_configuration,
+        save_rss_config, search_matches, search_source, set_tracker, show_table,
+        skip_match_selection, sync_now, update_user, view, UserState,
     },
 };
 use scraper::tracker::run_tracker;
@@ -118,6 +119,17 @@ fn api_router(state: AppState) -> Router {
         )
         .route("/anime", get(seasonal_anime))
         .route("/close", get(close))
+        .route("/sync_now", post(sync_now))
+        .route("/clear_transmission", post(clear_transmission))
+        .route("/search_matches", get(search_matches))
+        .route(
+            "/confirm_match",
+            post(confirm_match).with_state(state.user.clone()),
+        )
+        .route(
+            "/skip_match_selection",
+            post(skip_match_selection).with_state(state.user.clone()),
+        )
 }
 
 fn router(state: AppState) -> anyhow::Result<Router> {

@@ -11,6 +11,9 @@ services:
     devices:
       - /dev/net/tun
     environment:
+      # File permissions (match plex user/group)
+      - PUID=999
+      - PGID=984
       # Surfshark VPN
       - OPENVPN_PROVIDER=surfshark
       - OPENVPN_USERNAME=${SURFSHARK_EMAIL}
