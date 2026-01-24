@@ -34,6 +34,19 @@
 - [x] Remove Pi-specific files (.cargo/config.toml, Dockerfile.pi, release-pi profile)
 - [x] Linear history achieved without merge commits
 
+### Auto-Detect Fansub Source (Jan 2026)
+
+- [x] Add `detect_fansub_source()` to `src/scraper/rss.rs` - parses [Group] from titles
+- [x] Add `source` field to `MatchCandidate` struct
+- [x] Add `source` field to `Link` struct in nyaasi.rs
+- [x] Update `search_rss_matches()` to detect source from RSS feed items
+- [x] Update `search_nyaasi_matches()` to detect source from Nyaa.si results
+- [x] Update `has_exact_match()` to return (title, source) tuple
+- [x] Update `confirm_match()` handler to use detected source from payload
+- [x] Update `set_tracker()` to use detected source for auto-matched shows
+- [x] Update match_selection.html to display Source column and pass source through
+- [x] Supports: SubsPlease, Erai-raws, HorribleSubs, Judas, Yameii, Ember, ASM + any custom group
+
 ## Future Work
 
 ### Web UI for Filters

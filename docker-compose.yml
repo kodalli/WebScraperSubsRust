@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   anime-tracker:
     build:
@@ -29,6 +27,7 @@ services:
       - TRANSMISSION_HOST=localhost
       - TRANSMISSION_PORT=9091
       - PORT=8080
+      - RUST_LOG=info,web_scraper_subs_rust=debug
       # General
       - LOCAL_NETWORK=${LOCAL_NETWORK:-192.168.0.0/16}
       - TZ=${TZ:-America/New_York}
@@ -38,5 +37,5 @@ services:
       - ./config:/config
     ports:
       - "9091:9091"   # Transmission Web UI
-      - "8080:8080"   # Anime Tracker
+      - "8091:8080"   # Anime Tracker
     restart: unless-stopped

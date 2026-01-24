@@ -10,9 +10,19 @@ use tokio::time::sleep;
 
 use crate::db::{self, models::Show};
 
+/// Result of a sync operation with detailed feedback
+#[derive(Debug, Default)]
+pub struct SyncResult {
+    pub shows_processed: u32,
+    pub episodes_downloaded: u32,
+    pub shows_with_no_results: Vec<String>,
+    pub errors: Vec<String>,
+}
+
 use super::filter_engine::FilterEngine;
-use super::rss::{construct_magnet_url, fetch_rss_by_source, parse_episode_info, RssSource};
-use super::transmission::upload_to_transmission_rpc;
+use super::rss::{construct_magnet_url, detect_fansub_source, fetch_rss_by_source, parse_episode_info_full, RssSource};
+use super::transmission::{get_existing_torrent_hashes, upload_to_transmission_rpc};
+use std::collections::HashSet;
 
 /// Calculate the next run time based on RSS config
 ///
@@ -62,11 +72,18 @@ fn next_run_time_fallback() -> SystemTime {
 }
 
 /// Process a single show: fetch RSS, apply filters, and download new episodes
-async fn process_show(show: &Show) -> Result<u32> {
+async fn process_show(show: &Show, existing_hashes: &HashSet<String>) -> Result<u32> {
     let mut downloaded_count = 0u32;
+    // Track episodes we've already downloaded this sync to avoid duplicates from different sources
+    let mut downloaded_episodes: HashSet<u16> = HashSet::new();
 
     // Determine RSS source type from show.source field
     let rss_source = RssSource::from_source_string(&show.source);
+
+    tracing::info!(
+        "Processing: {} (source: {:?}, quality: {}, season: {})",
+        show.alternate, rss_source, show.quality, show.season
+    );
 
     // Fetch RSS feed using appropriate source
     let rss_items = match fetch_rss_by_source(
@@ -81,25 +98,34 @@ async fn process_show(show: &Show) -> Result<u32> {
         Err(e) => {
             tracing::error!(
                 "Failed to fetch RSS feed for '{}' (source: {:?}): {:?}",
-                show.alternate,
-                rss_source,
-                e
+                show.alternate, rss_source, e
             );
-            return Ok(0);
+            return Err(e);
         }
     };
 
+    tracing::debug!("Got {} RSS items for '{}'", rss_items.len(), show.alternate);
+
     if rss_items.is_empty() {
-        tracing::debug!("No RSS items found for '{}'", show.alternate);
         return Ok(0);
     }
 
+    // Filter by quality first (e.g., "1080p" should only match "1080p" items)
+    let quality_filter = &show.quality;
+    let rss_items: Vec<_> = rss_items
+        .into_iter()
+        .filter(|item| item.title.contains(quality_filter))
+        .collect();
+
     tracing::debug!(
-        "Fetched {} RSS items for '{}' (source: {:?})",
-        rss_items.len(),
-        show.alternate,
-        rss_source
+        "After quality filter ({}): {} items",
+        quality_filter,
+        rss_items.len()
     );
+
+    if rss_items.is_empty() {
+        return Ok(0);
+    }
 
     // Load global filters from database
     let global_filters = db::with_db(|conn| db::get_global_filters(conn)).await?;
@@ -137,11 +163,10 @@ async fn process_show(show: &Show) -> Result<u32> {
         show.alternate.clone()
     };
     let show_season = show.season;
-    let last_downloaded_episode = show.last_downloaded_episode;
 
     // Process items in score order (highest first)
-    for result in filtered_results {
-        let item = result.item;
+    for result in &filtered_results {
+        let item = &result.item;
 
         // Log matched rules for debugging
         if !result.matched_rules.is_empty() {
@@ -152,8 +177,8 @@ async fn process_show(show: &Show) -> Result<u32> {
             );
         }
 
-        // Parse episode information from the title
-        let (_, episode, _) = match parse_episode_info(&item.title) {
+        // Parse episode information from the title (including season)
+        let episode_info = match parse_episode_info_full(&item.title) {
             Some(info) => info,
             None => {
                 tracing::debug!("Could not parse episode info from: {}", item.title);
@@ -161,30 +186,95 @@ async fn process_show(show: &Show) -> Result<u32> {
             }
         };
 
-        // Skip episodes we've already downloaded (by episode number)
-        if episode <= last_downloaded_episode {
+        let episode = episode_info.episode;
+
+        // Filter by source - only download from the configured fansub group
+        // This prevents downloading duplicates from different groups (e.g., SubsPlease vs Erai-raws)
+        let item_source = detect_fansub_source(&item.title);
+        if item_source.to_lowercase() != show.source.to_lowercase() {
+            tracing::debug!(
+                "Skipping (source mismatch: {} != {}): '{}'",
+                item_source,
+                show.source,
+                item.title
+            );
             continue;
         }
 
-        // Check if this specific torrent has already been downloaded (by hash)
-        // For SubsPlease direct RSS, info_hash might be empty, so use torrent_link as fallback
+        // Filter by season if configured
+        // Season 1 shows: accept both explicit S1 and no-season titles
+        // Season 2+ shows: only accept matching season number
+        if show_season > 1 {
+            match episode_info.season {
+                Some(s) if s == show_season as u16 => {
+                    // Correct season, continue
+                }
+                Some(_) | None => {
+                    // Wrong season or no season in title but we want season 2+, skip
+                    continue;
+                }
+            }
+        } else if show_season == 1 {
+            // For season 1, accept S1 or no season marker
+            if let Some(s) = episode_info.season {
+                if s != 1 {
+                    continue;
+                }
+            }
+        }
+
+        // Skip if we've already downloaded this episode number in this sync
+        // This prevents downloading the same episode from multiple sources (e.g., SubsPlease + Erai-raws)
+        // or different encodings (HEVC vs AVC)
+        if downloaded_episodes.contains(&episode) {
+            tracing::debug!(
+                "Skipping (already downloaded episode {} this sync): '{}'",
+                episode,
+                item.title
+            );
+            continue;
+        }
+
+        // Skip AVC if HEVC is available (HEVC = better compression, same quality)
+        // Erai-raws releases both HEVC and AVC versions of each episode
+        let dominated_by_hevc = item.title.contains("AVC")
+            && filtered_results.iter().any(|other| {
+                if let Some(other_info) = parse_episode_info_full(&other.item.title) {
+                    other_info.episode == episode
+                        && other.item.title.contains("HEVC")
+                        && detect_fansub_source(&other.item.title).to_lowercase() == show.source.to_lowercase()
+                } else {
+                    false
+                }
+            });
+
+        if dominated_by_hevc {
+            tracing::debug!(
+                "Skipping AVC (HEVC available for episode {}): '{}'",
+                episode,
+                item.title
+            );
+            continue;
+        }
+
+        // Check if this torrent is already in Transmission (by hash)
+        // This is more reliable than database tracking since files can be deleted from Transmission
+        if !item.info_hash.is_empty() {
+            let hash_lower = item.info_hash.to_lowercase();
+            if existing_hashes.contains(&hash_lower) {
+                tracing::debug!("Skipping (already in Transmission): '{}'", item.title);
+                continue;
+            }
+        }
+
+        tracing::info!("Downloading: '{}'", item.title);
+
+        // For database history tracking, use hash if available
         let check_hash = if item.info_hash.is_empty() {
-            // Use a hash of the torrent link as a unique identifier
             format!("subsplease:{}", item.torrent_link)
         } else {
             item.info_hash.clone()
         };
-
-        let check_hash_clone = check_hash.clone();
-        let already_downloaded = db::with_db(move |conn| {
-            db::history::is_already_downloaded(conn, &check_hash_clone)
-        })
-        .await?;
-
-        if already_downloaded {
-            tracing::debug!("Already downloaded (by hash): {}", item.title);
-            continue;
-        }
 
         // Determine download URL: prefer magnet, fallback to torrent file
         let download_url = if !item.info_hash.is_empty() {
@@ -234,6 +324,8 @@ async fn process_show(show: &Show) -> Result<u32> {
                     tracing::error!("Failed to update last downloaded episode: {:?}", e);
                 }
 
+                // Mark this episode as downloaded to prevent duplicates from other sources
+                downloaded_episodes.insert(episode);
                 downloaded_count += 1;
             }
             Err(e) => {
@@ -246,20 +338,33 @@ async fn process_show(show: &Show) -> Result<u32> {
 }
 
 /// Download shows for all tracked entries using RSS feeds
-pub async fn download_shows() -> Result<()> {
+pub async fn download_shows() -> Result<SyncResult> {
+    let mut result = SyncResult::default();
+
     // Get all tracked shows from SQLite
     let shows = db::with_db(|conn| db::shows::get_tracked_shows(conn)).await?;
 
     if shows.is_empty() {
         tracing::info!("No tracked shows found in database.");
-        return Ok(());
+        return Ok(result);
     }
+
+    // Get existing torrent hashes from Transmission to avoid re-adding
+    let existing_hashes = match get_existing_torrent_hashes().await {
+        Ok(hashes) => {
+            tracing::debug!("Found {} existing torrents in Transmission", hashes.len());
+            hashes
+        }
+        Err(e) => {
+            tracing::warn!("Could not get existing torrents from Transmission: {}", e);
+            HashSet::new()
+        }
+    };
 
     tracing::info!("Processing {} tracked show(s)...", shows.len());
 
-    let mut total_downloaded = 0u32;
-
     for show in &shows {
+        result.shows_processed += 1;
         tracing::debug!(
             "Checking: {} ({}) [source: {}]",
             show.title,
@@ -267,12 +372,17 @@ pub async fn download_shows() -> Result<()> {
             show.source
         );
 
-        match process_show(show).await {
+        match process_show(show, &existing_hashes).await {
             Ok(count) => {
-                total_downloaded += count;
+                if count == 0 {
+                    result.shows_with_no_results.push(show.title.clone());
+                }
+                result.episodes_downloaded += count;
             }
             Err(e) => {
+                let error_msg = format!("{}: {}", show.title, e);
                 tracing::error!("Error processing show '{}': {:?}", show.title, e);
+                result.errors.push(error_msg);
             }
         }
     }
@@ -284,10 +394,10 @@ pub async fn download_shows() -> Result<()> {
 
     tracing::info!(
         "Poll complete. Downloaded {} new episode(s).",
-        total_downloaded
+        result.episodes_downloaded
     );
 
-    Ok(())
+    Ok(result)
 }
 
 /// Run the tracker loop
@@ -345,8 +455,8 @@ mod test {
         // db::init_database(&conn).expect("Failed to init schema");
 
         match download_shows().await {
-            Ok(()) => {
-                println!("Download check completed successfully");
+            Ok(result) => {
+                println!("Download check completed successfully: {:?}", result);
             }
             Err(err) => {
                 println!("Error: {:?}", err);

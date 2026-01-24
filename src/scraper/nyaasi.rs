@@ -3,6 +3,8 @@ use reqwest;
 use scraper::{Html, Selector};
 use serde::Deserialize;
 
+use super::rss::detect_fansub_source;
+
 #[derive(Debug)]
 pub struct Torrent {
     title: Option<String>,
@@ -23,8 +25,9 @@ pub async fn get_torrents_from_nyaa(
 ) -> anyhow::Result<String> {
     let uri = "https://nyaa.si";
     let user_uri = user.map_or("".into(), |s| format!("user/{}", s));
-    let category = category.unwrap_or(0);
-    let subcategory = subcategory.unwrap_or(0);
+    // Default to Anime (1) - English-translated (2) for English subs only
+    let category = category.unwrap_or(1);
+    let subcategory = subcategory.unwrap_or(2);
     let filters = filters.unwrap_or(0);
     let page = page.unwrap_or(0);
     let sorting = sorting.unwrap_or("id");
@@ -92,6 +95,7 @@ pub struct Link {
     pub episode: String,
     pub magnet_link: Option<String>,
     pub torrent_link: Option<String>,
+    pub source: String, // Detected fansub source from title
 }
 
 fn extract_show_info(title: &str) -> (&str, &str) {
@@ -116,12 +120,14 @@ pub async fn fetch_sources(keyword: &str, user: &str) -> anyhow::Result<Vec<Link
         .iter()
         .filter_map(|p| {
             p.title.as_ref().and_then(|t| {
-                let (title, episode) = extract_show_info(&t);
+                let (title, episode) = extract_show_info(t);
+                let source = detect_fansub_source(t);
                 Some(Link {
                     title: title.to_string(),
                     episode: episode.to_string(),
                     torrent_link: p.torrent.clone(),
                     magnet_link: p.magnet.clone(),
+                    source,
                 })
             })
         })

@@ -19,6 +19,8 @@ struct TorrentListArgs {
 struct TorrentInfo {
     id: i64,
     name: String,
+    #[serde(rename = "hashString", default)]
+    hash_string: String,
 }
 
 /// Get the Transmission session ID for RPC calls
@@ -38,6 +40,39 @@ async fn get_session_id() -> Result<(&'static reqwest::Client, String, String)> 
         .to_string();
 
     Ok((client, url, session_id))
+}
+
+/// Get all torrent hashes currently in Transmission
+///
+/// Returns a set of lowercase hash strings for quick lookup
+pub async fn get_existing_torrent_hashes() -> Result<std::collections::HashSet<String>> {
+    let (client, url, session_id) = get_session_id().await?;
+
+    let body = r#"{"method": "torrent-get", "arguments": {"fields": ["id", "name", "hashString"]}}"#;
+
+    let resp = client
+        .post(&url)
+        .header("X-Transmission-Session-Id", &session_id)
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await?;
+
+    let text = resp.text().await?;
+    let response: TransmissionResponse = serde_json::from_str(&text)
+        .map_err(|e| anyhow!("Failed to parse torrent list: {} - Response: {}", e, text))?;
+
+    let torrents = response
+        .arguments
+        .map(|a| a.torrents)
+        .unwrap_or_default();
+
+    let hashes: std::collections::HashSet<String> = torrents
+        .into_iter()
+        .map(|t| t.hash_string.to_lowercase())
+        .collect();
+
+    Ok(hashes)
 }
 
 /// Remove all torrents from Transmission, optionally deleting local data
