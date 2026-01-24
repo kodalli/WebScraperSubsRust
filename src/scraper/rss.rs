@@ -29,6 +29,34 @@ impl RssSource {
     }
 }
 
+/// Normalizes an anime title for RSS search by removing season suffixes
+///
+/// Nyaa/SubsPlease typically use "S2" format instead of "2nd Season" or "Season 2".
+/// This function strips these suffixes so the search will match.
+///
+/// # Examples
+/// - "Sousou no Frieren 2nd Season" -> "Sousou no Frieren"
+/// - "My Hero Academia Season 7" -> "My Hero Academia"
+/// - "One Piece" -> "One Piece" (unchanged)
+fn normalize_title_for_search(title: &str) -> String {
+    let patterns = [
+        r"\s+(?:2nd|3rd|[4-9]th)\s+Season\s*$",           // "2nd Season", "3rd Season", etc.
+        r"\s+Season\s+\d+\s*$",                           // "Season 2", "Season 10"
+        r"\s+S\d+\s*$",                                   // Already has "S2" format
+        r"\s+Part\s+\d+\s*$",                             // "Part 2"
+        r"\s+(?:II|III|IV|V|VI|VII|VIII|IX|X)\s*$",       // Roman numerals
+        r"\s+Cour\s+\d+\s*$",                             // "Cour 2"
+    ];
+
+    let mut result = title.to_string();
+    for pattern in patterns {
+        if let Ok(re) = Regex::new(&format!("(?i){}", pattern)) {
+            result = re.replace(&result, "").to_string();
+        }
+    }
+    result.trim().to_string()
+}
+
 /// Represents a single item from the Nyaa RSS feed
 #[derive(Debug, Clone)]
 pub struct RssItem {
@@ -68,12 +96,19 @@ pub struct ParsedEpisode {
 /// let items = fetch_rss_feed("subsplease", "One Piece").await?;
 /// ```
 pub async fn fetch_rss_feed(source: &str, alternate: &str) -> Result<Vec<RssItem>> {
-    let query = format!("{} {}", source, alternate);
+    // Normalize title to remove season suffixes that don't match Nyaa naming
+    let normalized_title = normalize_title_for_search(alternate);
+    let query = format!("{} {}", source, normalized_title);
     let encoded_query = urlencoding::encode(&query);
     let url = format!(
         "https://nyaa.si/?page=rss&q={}&c=1_2&f=0",
         encoded_query
     );
+
+    tracing::debug!("Fetching Nyaa RSS: {}", url);
+    if normalized_title != alternate {
+        tracing::debug!("Title normalized: '{}' -> '{}'", alternate, normalized_title);
+    }
 
     let response = super::http_client()
         .get(&url)
@@ -404,6 +439,15 @@ impl RssItemBuilder {
 ///
 /// # Returns
 /// A tuple of (show_title, episode_number, quality) if parsing succeeds
+/// Parsed episode information including optional season
+#[derive(Debug, Clone, PartialEq)]
+pub struct EpisodeInfo {
+    pub show_title: String,
+    pub season: Option<u16>,
+    pub episode: u16,
+    pub quality: String,
+}
+
 ///
 /// # Examples
 /// ```ignore
@@ -411,17 +455,132 @@ impl RssItemBuilder {
 /// assert_eq!(info, Some(("One Piece".to_string(), 1060, "1080p".to_string())));
 /// ```
 pub fn parse_episode_info(title: &str) -> Option<(String, u16, String)> {
-    // Pattern: [Source] Show Name - Episode (Quality) [hash].mkv
-    // Also handles: [Source] Show Name - Episode [Quality] [hash]
-    let re = Regex::new(r"\[.*?\]\s*(.*?)\s*-\s*(\d+)\s*.*?(\d{3,4}p)").ok()?;
+    let info = parse_episode_info_full(title)?;
+    Some((info.show_title, info.episode, info.quality))
+}
 
-    let captures = re.captures(title)?;
+/// Parses episode information including season number from a release title
+///
+/// Handles formats like:
+/// - `[SubsPlease] Show Name S2 - 02 (1080p)` -> season 2, episode 2
+/// - `[Erai-raws] Show Name 3rd Season - 01 [1080p]` -> season 3, episode 1
+/// - `[SubsPlease] Show Name - 28 (1080p)` -> season 1 (default), episode 28
+pub fn parse_episode_info_full(title: &str) -> Option<EpisodeInfo> {
+    // Pattern with explicit season: [Source] Show Name S2 - Episode (Quality)
+    let re_with_season = Regex::new(r"\[.*?\]\s*(.*?)\s+S(\d+)\s*-\s*(\d+)\s*.*?(\d{3,4}p)").ok()?;
 
-    let show_title = captures.get(1)?.as_str().trim().to_string();
-    let episode: u16 = captures.get(2)?.as_str().parse().ok()?;
-    let quality = captures.get(3)?.as_str().to_string();
+    if let Some(captures) = re_with_season.captures(title) {
+        let show_title = captures.get(1)?.as_str().trim().to_string();
+        let season: u16 = captures.get(2)?.as_str().parse().ok()?;
+        let episode: u16 = captures.get(3)?.as_str().parse().ok()?;
+        let quality = captures.get(4)?.as_str().to_string();
 
-    Some((show_title, episode, quality))
+        return Some(EpisodeInfo {
+            show_title,
+            season: Some(season),
+            episode,
+            quality,
+        });
+    }
+
+    // Pattern with ordinal season: [Source] Show Name 2nd Season - Episode [Quality]
+    // Matches: "2nd Season", "3rd Season", "4th Season", etc.
+    let re_ordinal_season =
+        Regex::new(r"\[.*?\]\s*(.*?)\s+(\d+)(?:st|nd|rd|th)\s+Season\s*-\s*(\d+)\s*.*?(\d{3,4}p)")
+            .ok()?;
+
+    if let Some(captures) = re_ordinal_season.captures(title) {
+        let show_title = captures.get(1)?.as_str().trim().to_string();
+        let season: u16 = captures.get(2)?.as_str().parse().ok()?;
+        let episode: u16 = captures.get(3)?.as_str().parse().ok()?;
+        let quality = captures.get(4)?.as_str().to_string();
+
+        return Some(EpisodeInfo {
+            show_title,
+            season: Some(season),
+            episode,
+            quality,
+        });
+    }
+
+    // Pattern with "Season N": [Source] Show Name Season 2 - Episode [Quality]
+    let re_season_n =
+        Regex::new(r"\[.*?\]\s*(.*?)\s+Season\s+(\d+)\s*-\s*(\d+)\s*.*?(\d{3,4}p)").ok()?;
+
+    if let Some(captures) = re_season_n.captures(title) {
+        let show_title = captures.get(1)?.as_str().trim().to_string();
+        let season: u16 = captures.get(2)?.as_str().parse().ok()?;
+        let episode: u16 = captures.get(3)?.as_str().parse().ok()?;
+        let quality = captures.get(4)?.as_str().to_string();
+
+        return Some(EpisodeInfo {
+            show_title,
+            season: Some(season),
+            episode,
+            quality,
+        });
+    }
+
+    // Pattern without season: [Source] Show Name - Episode (Quality)
+    let re_no_season = Regex::new(r"\[.*?\]\s*(.*?)\s*-\s*(\d+)\s*.*?(\d{3,4}p)").ok()?;
+
+    if let Some(captures) = re_no_season.captures(title) {
+        let show_title = captures.get(1)?.as_str().trim().to_string();
+        let episode: u16 = captures.get(2)?.as_str().parse().ok()?;
+        let quality = captures.get(3)?.as_str().to_string();
+
+        return Some(EpisodeInfo {
+            show_title,
+            season: None, // Could be season 1 or a long-running show
+            episode,
+            quality,
+        });
+    }
+
+    None
+}
+
+/// Detects the fansub source/group from a torrent title
+///
+/// Parses common fansub group brackets from anime release titles.
+///
+/// # Arguments
+/// * `title` - The torrent title string (e.g., "[SubsPlease] One Piece - 1060 (1080p)")
+///
+/// # Returns
+/// The detected source name (lowercase), or "subsplease" as default
+///
+/// # Examples
+/// ```ignore
+/// assert_eq!(detect_fansub_source("[SubsPlease] One Piece - 01 (1080p)"), "subsplease");
+/// assert_eq!(detect_fansub_source("[Erai-raws] Frieren - 01 [1080p]"), "Erai-raws");
+/// assert_eq!(detect_fansub_source("[Judas] Attack on Titan - 01.mkv"), "judas");
+/// ```
+pub fn detect_fansub_source(title: &str) -> String {
+    // Pattern to extract group name from brackets at the start
+    let re = Regex::new(r"^\[([^\]]+)\]").ok();
+
+    if let Some(regex) = re {
+        if let Some(captures) = regex.captures(title) {
+            if let Some(group) = captures.get(1) {
+                let source = group.as_str().trim();
+                // Return common groups with their canonical casing
+                return match source.to_lowercase().as_str() {
+                    "subsplease" => "subsplease".to_string(),
+                    "erai-raws" => "Erai-raws".to_string(),
+                    "horriblesubs" => "horriblesubs".to_string(),
+                    "judas" => "judas".to_string(),
+                    "yameii" => "yameii".to_string(),
+                    "ember" => "ember".to_string(),
+                    "asm" => "asm".to_string(),
+                    _ => source.to_string(), // Preserve original casing for unknown groups
+                };
+            }
+        }
+    }
+
+    // Default to subsplease if no group found
+    "subsplease".to_string()
 }
 
 /// Constructs a magnet URL from an info hash and title
@@ -641,6 +800,62 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_episode_info_full_ordinal_season() {
+        // Test "3rd Season" format (like Oshi no Ko)
+        let title = "[Erai-raws] Oshi no Ko 3rd Season - 01 [1080p CR WEBRip HEVC AAC][MultiSub][E5D615AA]";
+        let result = parse_episode_info_full(title);
+
+        assert!(result.is_some());
+        let info = result.unwrap();
+        assert_eq!(info.show_title, "Oshi no Ko");
+        assert_eq!(info.season, Some(3));
+        assert_eq!(info.episode, 1);
+        assert_eq!(info.quality, "1080p");
+    }
+
+    #[test]
+    fn test_parse_episode_info_full_ordinal_2nd_season() {
+        // Test "2nd Season" format
+        let title = "[SubsPlease] Blue Lock 2nd Season - 05 (1080p) [HASH].mkv";
+        let result = parse_episode_info_full(title);
+
+        assert!(result.is_some());
+        let info = result.unwrap();
+        assert_eq!(info.show_title, "Blue Lock");
+        assert_eq!(info.season, Some(2));
+        assert_eq!(info.episode, 5);
+        assert_eq!(info.quality, "1080p");
+    }
+
+    #[test]
+    fn test_parse_episode_info_full_s_format() {
+        // Test "S2" format
+        let title = "[SubsPlease] Show Name S2 - 02 (1080p) [HASH].mkv";
+        let result = parse_episode_info_full(title);
+
+        assert!(result.is_some());
+        let info = result.unwrap();
+        assert_eq!(info.show_title, "Show Name");
+        assert_eq!(info.season, Some(2));
+        assert_eq!(info.episode, 2);
+        assert_eq!(info.quality, "1080p");
+    }
+
+    #[test]
+    fn test_parse_episode_info_full_no_season() {
+        // Test no season format (like long-running shows)
+        let title = "[SubsPlease] One Piece - 1080 (1080p) [HASH].mkv";
+        let result = parse_episode_info_full(title);
+
+        assert!(result.is_some());
+        let info = result.unwrap();
+        assert_eq!(info.show_title, "One Piece");
+        assert_eq!(info.season, None);
+        assert_eq!(info.episode, 1080);
+        assert_eq!(info.quality, "1080p");
+    }
+
+    #[test]
     fn test_construct_magnet_url() {
         let info_hash = "e30690d4a8d1f5e45f5ded430bdaedc710da0245";
         let title = "One Piece - 1060";
@@ -796,5 +1011,47 @@ mod tests {
         for item in &items {
             println!("  - {}", item.title);
         }
+    }
+
+    #[test]
+    fn test_detect_fansub_source_subsplease() {
+        assert_eq!(
+            detect_fansub_source("[SubsPlease] One Piece - 1060 (1080p) [37A98D45].mkv"),
+            "subsplease"
+        );
+    }
+
+    #[test]
+    fn test_detect_fansub_source_erai_raws() {
+        assert_eq!(
+            detect_fansub_source("[Erai-raws] Goblin Slayer II - 03 [1080p][Multiple Subtitle]"),
+            "Erai-raws"
+        );
+    }
+
+    #[test]
+    fn test_detect_fansub_source_judas() {
+        assert_eq!(
+            detect_fansub_source("[Judas] Attack on Titan - The Final Season - 01.mkv"),
+            "judas"
+        );
+    }
+
+    #[test]
+    fn test_detect_fansub_source_unknown() {
+        // Unknown groups should preserve their original casing
+        assert_eq!(
+            detect_fansub_source("[SomeNewGroup] Anime - 01 (1080p).mkv"),
+            "SomeNewGroup"
+        );
+    }
+
+    #[test]
+    fn test_detect_fansub_source_no_brackets() {
+        // No brackets should default to subsplease
+        assert_eq!(
+            detect_fansub_source("One Piece - 1060 (1080p).mkv"),
+            "subsplease"
+        );
     }
 }
