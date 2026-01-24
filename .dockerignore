@@ -1,9 +1,41 @@
+# Build artifacts
 target/
+node_modules/
+
+# Git
 .git/
 .gitignore
+
+# Documentation
 *.md
+
+# Environment and config
 .env
-tracker.db
-downloads/
 config/
+
+# Database files
+tracker.db
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Data directories
+downloads/
 data/
+
+# IDE and editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
+.DS_Store
+
+# Misc
+ui.png
+*.bak
+*.xml
+pnpm-lock.yaml
+get-docker.sh
