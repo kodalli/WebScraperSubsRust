@@ -4,7 +4,7 @@ use crate::{
     scraper::{
         anilist::{get_anilist_all_airing, get_anilist_data, AniShow, NextAiringEpisode, Season},
         nyaasi::{fetch_sources, Link},
-        rss::{fetch_rss_feed, parse_episode_info},
+        rss::{detect_fansub_source, fetch_rss_feed, parse_episode_info},
         season_parser::detect_season,
         transmission::{clear_all_torrents, upload_to_transmission_rpc},
     },
@@ -117,6 +117,7 @@ pub struct GridTemplate {
 #[template(path = "components/season_bar.html")]
 pub struct NavBarTemplate {
     pub seasons: Vec<(Season, u16)>,
+    pub offset: i32, // Offset from current season (negative = past, positive = future)
 }
 
 #[derive(Template)]
@@ -174,6 +175,7 @@ pub struct MatchCandidate {
     pub episode_count: u16,
     pub quality: String,
     pub latest_episode: u16,
+    pub source: String, // Detected fansub source (e.g., "subsplease", "Erai-raws")
 }
 
 #[derive(Template)]
@@ -195,6 +197,8 @@ pub struct SearchMatchesQuery {
     pub source: String,
     pub latest_episode: String,
     pub next_air_date: String,
+    /// Optional custom search query (uses title if not provided)
+    pub query: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -204,6 +208,7 @@ pub struct ConfirmMatchQuery {
     pub alternate: String,
     pub latest_episode: String,
     pub next_air_date: String,
+    pub source: Option<String>, // Detected fansub source from match selection
 }
 
 #[derive(Deserialize)]
@@ -271,6 +276,53 @@ impl fmt::Display for Season {
             }
         )
     }
+}
+
+/// Convert a season to a numeric index (0=WINTER, 1=SPRING, 2=SUMMER, 3=FALL)
+fn season_to_index(season: Season) -> i32 {
+    match season {
+        Season::WINTER => 0,
+        Season::SPRING => 1,
+        Season::SUMMER => 2,
+        Season::FALL => 3,
+    }
+}
+
+/// Convert a numeric index to a season (handles wrapping)
+fn index_to_season(index: i32) -> Season {
+    match index.rem_euclid(4) {
+        0 => Season::WINTER,
+        1 => Season::SPRING,
+        2 => Season::SUMMER,
+        3 => Season::FALL,
+        _ => unreachable!(),
+    }
+}
+
+/// Get the season and year offset by a number of seasons from a base
+fn offset_season(season: Season, year: u16, offset: i32) -> (Season, u16) {
+    let base_index = season_to_index(season);
+    let new_index = base_index + offset;
+
+    // Calculate year adjustment (4 seasons per year)
+    let year_offset = new_index.div_euclid(4);
+    let new_season = index_to_season(new_index);
+    let new_year = (year as i32 + year_offset) as u16;
+
+    (new_season, new_year)
+}
+
+/// Get 4 seasons centered around the current season with an offset
+/// offset of 0 = current season in position 2 (0-indexed)
+/// offset of -4 = one year back
+fn get_seasons_with_offset(offset: i32) -> Vec<(Season, u16)> {
+    let (current_season, current_year) = current_year_and_season();
+
+    // Generate 4 seasons starting from (current - 2 + offset)
+    let start_offset = offset - 2;
+    (0..4)
+        .map(|i| offset_season(current_season, current_year, start_offset + i))
+        .collect()
 }
 
 fn get_seasons_around(season: Season, year: u16) -> Vec<(Season, u16)> {
@@ -398,7 +450,7 @@ pub async fn view(State(state): State<Arc<Mutex<UserState>>>) -> impl IntoRespon
         grid: grid_template,
         season: lock.season,
         year: lock.year,
-        navbar: NavBarTemplate { seasons },
+        navbar: NavBarTemplate { seasons, offset: 0 },
         table: TableTemplate {
             shows: lock.tracker.values().cloned().collect(),
         },
@@ -474,6 +526,24 @@ pub async fn update_user(
     Html(format!("{}", payload.user))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SeasonBarNavigateQuery {
+    pub offset: i32,
+}
+
+/// Navigate the season bar forward or backward
+#[axum::debug_handler]
+pub async fn navigate_season_bar(
+    Query(payload): Query<SeasonBarNavigateQuery>,
+) -> impl IntoResponse {
+    let seasons = get_seasons_with_offset(payload.offset);
+    let template = NavBarTemplate {
+        seasons,
+        offset: payload.offset,
+    };
+    HtmlTemplate::new(template)
+}
+
 /// Load tracked shows from the SQLite database into a HashMap
 pub async fn read_tracked_shows() -> anyhow::Result<HashMap<u32, TableEntry>> {
     let shows = db::with_db(|conn| db::get_tracked_shows(conn)).await?;
@@ -543,7 +613,7 @@ pub async fn set_tracker(
     let matches = search_rss_matches("subsplease", &title).await;
 
     // Check for exact match
-    if let Some(exact_match) = has_exact_match(&title, &matches) {
+    if let Some((exact_match, detected_source)) = has_exact_match(&title, &matches) {
         // Exact match found - save directly with matched title as alternate
         let mut lock = state.lock().await;
         lock.tracker.insert(new_payload.id, new_payload.clone());
@@ -562,6 +632,7 @@ pub async fn set_tracker(
                 existing_show.is_tracked = true;
                 existing_show.alternate = exact_match;
                 existing_show.season = detected_season;
+                existing_show.source = detected_source;
                 existing_show.latest_episode = Some(latest_episode);
                 existing_show.next_air_date = Some(next_air_date);
                 db::update_show(conn, &existing_show)?;
@@ -571,7 +642,7 @@ pub async fn set_tracker(
                     title: orig_title,
                     alternate: exact_match,
                     season: detected_season,
-                    source: "subsplease".to_string(),
+                    source: detected_source,
                     quality: "1080p".to_string(),
                     download_path: None,
                     last_downloaded_episode: 0,
@@ -622,7 +693,7 @@ pub async fn set_tracker(
 
     if !nyaasi_matches.is_empty() {
         // Check for exact match in Nyaa.si results
-        if let Some(exact_match) = has_exact_match(&title, &nyaasi_matches) {
+        if let Some((exact_match, detected_source)) = has_exact_match(&title, &nyaasi_matches) {
             let mut lock = state.lock().await;
             lock.tracker.insert(new_payload.id, new_payload.clone());
 
@@ -640,6 +711,7 @@ pub async fn set_tracker(
                     existing_show.is_tracked = true;
                     existing_show.alternate = exact_match;
                     existing_show.season = detected_season;
+                    existing_show.source = detected_source;
                     existing_show.latest_episode = Some(latest_episode);
                     existing_show.next_air_date = Some(next_air_date);
                     db::update_show(conn, &existing_show)?;
@@ -649,7 +721,7 @@ pub async fn set_tracker(
                         title: orig_title,
                         alternate: exact_match,
                         season: detected_season,
-                        source: "subsplease".to_string(),
+                        source: detected_source,
                         quality: "1080p".to_string(),
                         download_path: None,
                         last_downloaded_episode: 0,
@@ -923,10 +995,37 @@ pub async fn sync_now() -> impl IntoResponse {
     use crate::scraper::tracker::download_shows;
 
     match download_shows().await {
-        Ok(_) => Html("<span class=\"text-green-400\">Sync complete!</span>".to_string()),
+        Ok(result) => {
+            let mut msg = String::new();
+
+            if result.shows_processed == 0 {
+                return Html("<span class=\"text-yellow-400\">No tracked shows</span>".to_string());
+            }
+
+            if result.episodes_downloaded > 0 {
+                msg.push_str(&format!(
+                    "<span class=\"text-green-400\">Downloaded {} episode(s)</span>",
+                    result.episodes_downloaded
+                ));
+            } else if result.errors.is_empty() {
+                msg.push_str("<span class=\"text-gray-400\">No new episodes</span>");
+            }
+
+            if !result.errors.is_empty() {
+                if !msg.is_empty() {
+                    msg.push_str(" | ");
+                }
+                msg.push_str(&format!(
+                    "<span class=\"text-red-400\">{} error(s)</span>",
+                    result.errors.len()
+                ));
+            }
+
+            Html(msg)
+        }
         Err(e) => {
             eprintln!("Sync failed: {:?}", e);
-            Html("<span class=\"text-red-400\">Sync failed</span>".to_string())
+            Html(format!("<span class=\"text-red-400\">Sync failed: {}</span>", e))
         }
     }
 }
@@ -1022,12 +1121,15 @@ async fn search_rss_matches(source: &str, title: &str) -> Vec<MatchCandidate> {
         }
     };
 
-    // Group by show title
-    let mut show_map: HashMap<String, (u16, u16, String)> = HashMap::new(); // (count, latest_episode, quality)
+    // Group by show title, track (count, latest_episode, quality, source)
+    let mut show_map: HashMap<String, (u16, u16, String, String)> = HashMap::new();
 
     for item in &rss_items {
         if let Some((show_title, episode, quality)) = parse_episode_info(&item.title) {
-            let entry = show_map.entry(show_title).or_insert((0, 0, quality.clone()));
+            let detected_source = detect_fansub_source(&item.title);
+            let entry = show_map
+                .entry(show_title)
+                .or_insert((0, 0, quality.clone(), detected_source.clone()));
             entry.0 += 1; // increment count
             if episode > entry.1 {
                 entry.1 = episode; // track latest episode
@@ -1035,16 +1137,18 @@ async fn search_rss_matches(source: &str, title: &str) -> Vec<MatchCandidate> {
             if entry.2.is_empty() {
                 entry.2 = quality;
             }
+            // Keep first detected source (they should all be the same for a given show)
         }
     }
 
     show_map
         .into_iter()
-        .map(|(show_title, (episode_count, latest_episode, quality))| MatchCandidate {
+        .map(|(show_title, (episode_count, latest_episode, quality, source))| MatchCandidate {
             show_title,
             episode_count,
             latest_episode,
             quality,
+            source,
         })
         .collect()
 }
@@ -1059,45 +1163,53 @@ async fn search_nyaasi_matches(title: &str) -> Vec<MatchCandidate> {
         }
     };
 
-    // Group by show title
-    let mut show_map: HashMap<String, (u16, u16)> = HashMap::new(); // (count, latest_episode)
+    // Group by show title, track (count, latest_episode, source)
+    let mut show_map: HashMap<String, (u16, u16, String)> = HashMap::new();
 
     for link in &links {
         let episode: u16 = link.episode.parse().unwrap_or(0);
-        let entry = show_map.entry(link.title.clone()).or_insert((0, 0));
+        let entry = show_map
+            .entry(link.title.clone())
+            .or_insert((0, 0, link.source.clone()));
         entry.0 += 1;
         if episode > entry.1 {
             entry.1 = episode;
         }
+        // Keep first detected source
     }
 
     show_map
         .into_iter()
-        .map(|(show_title, (episode_count, latest_episode))| MatchCandidate {
+        .map(|(show_title, (episode_count, latest_episode, source))| MatchCandidate {
             show_title,
             episode_count,
             latest_episode,
             quality: "1080p".to_string(), // Nyaa.si results are pre-filtered to 1080p
+            source,
         })
         .collect()
 }
 
 /// Check if any match equals the title (case-insensitive)
-fn has_exact_match(title: &str, matches: &[MatchCandidate]) -> Option<String> {
+/// Returns (show_title, source) if exact match found
+fn has_exact_match(title: &str, matches: &[MatchCandidate]) -> Option<(String, String)> {
     let title_lower = title.to_lowercase();
     matches
         .iter()
         .find(|m| m.show_title.to_lowercase() == title_lower)
-        .map(|m| m.show_title.clone())
+        .map(|m| (m.show_title.clone(), m.source.clone()))
 }
 
 /// Handler to search for matches (called when user clicks "Search Nyaa.si Instead")
 #[axum::debug_handler]
 pub async fn search_matches(Query(payload): Query<SearchMatchesQuery>) -> impl IntoResponse {
+    // Use custom query if provided, otherwise use title
+    let search_term = payload.query.as_ref().unwrap_or(&payload.title);
+
     let matches = if payload.source == "nyaasi" {
-        search_nyaasi_matches(&payload.title).await
+        search_nyaasi_matches(search_term).await
     } else {
-        search_rss_matches(&payload.source, &payload.title).await
+        search_rss_matches(&payload.source, search_term).await
     };
 
     let fallback_available = payload.source != "nyaasi";
@@ -1137,7 +1249,13 @@ pub async fn confirm_match(
     let season_info = detect_season(&payload.alternate);
     let detected_season = season_info.season;
 
-    // Save to database with the selected alternate name
+    // Use detected source from match selection, or default to "subsplease"
+    let detected_source = payload
+        .source
+        .clone()
+        .unwrap_or_else(|| "subsplease".to_string());
+
+    // Save to database with the selected alternate name and source
     let show_id = payload.id;
     let title = payload.title.clone();
     let alternate = payload.alternate.clone();
@@ -1149,6 +1267,7 @@ pub async fn confirm_match(
             existing_show.is_tracked = true;
             existing_show.alternate = alternate;
             existing_show.season = detected_season;
+            existing_show.source = detected_source;
             existing_show.latest_episode = Some(latest_episode);
             existing_show.next_air_date = Some(next_air_date);
             db::update_show(conn, &existing_show)?;
@@ -1158,7 +1277,7 @@ pub async fn confirm_match(
                 title,
                 alternate,
                 season: detected_season,
-                source: "subsplease".to_string(),
+                source: detected_source,
                 quality: "1080p".to_string(),
                 download_path: None,
                 last_downloaded_episode: 0,

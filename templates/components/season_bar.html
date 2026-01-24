@@ -1,9 +1,9 @@
-<div class="pb-5">
-    <nav class="bg-black text-center border border-yellow-400 py-5 px-2 font-semibold  ">
+<div id="season-bar" class="pb-5 text-center">
+    <nav class="inline-flex items-center bg-gray-900 text-center rounded-lg py-3 px-4 font-semibold">
 
-        {% let button_style = "season-btn rounded-md bg-black px-3.5 py-1.5 text-white shadow-sm transition-colors hover:bg-white
-        hover:text-black hover:ring-2 hover:ring-black focus-visible:outline focus-visible:outline-2
-        focus-visible:outline-offset-2 focus-visible:outline-black" %}
+        {% let button_style = "season-btn rounded-md bg-black px-3.5 py-1.5 text-white shadow-sm transition-colors hover:bg-yellow-400 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-400" %}
+
+        {% let arrow_style = "rounded-md bg-black px-2 py-1.5 text-white shadow-sm transition-colors hover:bg-yellow-400 hover:text-black" %}
 
         {% let s0 = seasons.get(0).unwrap().0 %}
         {% let y0 = seasons.get(0).unwrap().1 %}
@@ -17,45 +17,65 @@
         {% let s3 = seasons.get(3).unwrap().0 %}
         {% let y3 = seasons.get(3).unwrap().1 %}
 
+        <!-- Left arrow - go to older seasons -->
+        <button class="{{ arrow_style }} mr-2"
+            hx-get="/api/navigate_season_bar?offset={{ offset - 4 }}"
+            hx-target="#season-bar"
+            hx-swap="outerHTML"
+            title="Older seasons">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+            </svg>
+        </button>
 
         <ul class="inline-flex list-none p-0 m-0">
-            <li class="mx-4">
+            <li class="mx-2">
                 <a href="#{{ s0 }}{{ y0 }}" class="{{ button_style }}"
                     hx-get="/api/navigate_seasonal_anime?season={{ s0 }}&year={{ y0 }}" hx-target="#show-grid"
-                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline')); this.classList.add('underline')">
+                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline', 'decoration-yellow-400')); this.classList.add('underline', 'decoration-yellow-400')">
                     {{ s0|short_season(y0) }}
                 </a>
             </li>
-            <li class="mx-4">
+            <li class="mx-2">
                 <a href="#{{ s1 }}{{ y1 }}" class="{{ button_style }}"
                     hx-get="/api/navigate_seasonal_anime?season={{ s1 }}&year={{ y1 }}" hx-target="#show-grid"
-                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline')); this.classList.add('underline')">
+                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline', 'decoration-yellow-400')); this.classList.add('underline', 'decoration-yellow-400')">
                     {{ s1|short_season(y1) }}
                 </a>
             </li>
-            <li class="mx-4">
-                <a href="#{{ s2 }}{{ y2 }}" class="{{ button_style }} underline"
+            <li class="mx-2">
+                <a href="#{{ s2 }}{{ y2 }}" class="{{ button_style }}{% if offset == 0 %} underline decoration-yellow-400{% endif %}"
                     hx-get="/api/navigate_seasonal_anime?season={{ s2 }}&year={{ y2 }}" hx-target="#show-grid"
-                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline')); this.classList.add('underline')">
+                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline', 'decoration-yellow-400')); this.classList.add('underline', 'decoration-yellow-400')">
                     {{ s2|short_season(y2) }}
                 </a>
             </li>
-            <li class="mx-4">
+            <li class="mx-2">
                 <a href="#{{ s3 }}{{ y3 }}" class="{{ button_style }}"
                     hx-get="/api/navigate_seasonal_anime?season={{ s3 }}&year={{ y3 }}" hx-target="#show-grid"
-                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline')); this.classList.add('underline')">
+                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline', 'decoration-yellow-400')); this.classList.add('underline', 'decoration-yellow-400')">
                     {{ s3|short_season(y3) }}
                 </a>
             </li>
-            <li class="mx-4">
+            <li class="mx-2">
                 <a href="#currently_airing"
                     hx-get="/api/currently_airing" hx-target="#show-grid"
-                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline')); this.classList.add('underline')"
+                    hx-on:click="document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('underline', 'decoration-yellow-400')); this.classList.add('underline', 'decoration-yellow-400')"
                     class="{{ button_style }}">
                     Airing
                 </a>
             </li>
         </ul>
-    </nav>
 
+        <!-- Right arrow - go to newer seasons -->
+        <button class="{{ arrow_style }} ml-2"
+            hx-get="/api/navigate_season_bar?offset={{ offset + 4 }}"
+            hx-target="#season-bar"
+            hx-swap="outerHTML"
+            title="Newer seasons">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+            </svg>
+        </button>
+    </nav>
 </div>

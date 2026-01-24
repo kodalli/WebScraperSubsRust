@@ -16,7 +16,8 @@ use pages::{
         clear_transmission, close, confirm_match, create_filter, create_show_filter,
         currently_airing_anime, delete_filter, delete_show_filter, download_from_link,
         get_configuration, get_filters, get_rss_config, get_show_filters, get_source,
-        navigate_seasonal_anime, save_configuration, save_rss_config, search_matches, search_source,
+        navigate_season_bar, navigate_seasonal_anime, save_configuration, save_rss_config,
+        search_matches, search_source,
         set_tracker, show_table, skip_match_selection, sync_now, toggle_filter, update_filter,
         update_user, view, UserState,
     },
@@ -103,6 +104,7 @@ fn api_router(state: AppState) -> Router {
             "/navigate_seasonal_anime",
             get(navigate_seasonal_anime).with_state(state.user.clone()),
         )
+        .route("/navigate_season_bar", get(navigate_season_bar))
         .route(
             "/currently_airing",
             get(currently_airing_anime).with_state(state.user.clone()),
