@@ -33,6 +33,7 @@ RUN cargo build --release && \
 # Stage 3: Build actual app (inherits cached deps)
 FROM deps-builder AS builder
 COPY src ./src
+COPY templates ./templates
 RUN cargo build --release && \
     strip --strip-all /app/target/release/web_scraper_subs_rust
 
