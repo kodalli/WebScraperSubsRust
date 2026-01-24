@@ -75,7 +75,9 @@ pub async fn fetch_rss_feed(source: &str, alternate: &str) -> Result<Vec<RssItem
         encoded_query
     );
 
-    let response = reqwest::get(&url)
+    let response = super::http_client()
+        .get(&url)
+        .send()
         .await
         .with_context(|| format!("Failed to fetch RSS feed from {}", url))?;
 
@@ -107,7 +109,9 @@ pub async fn fetch_subsplease_rss(quality: &str) -> Result<Vec<RssItem>> {
     let quality_param = quality.trim_end_matches('p');
     let url = format!("https://subsplease.org/rss/?t&r={}", quality_param);
 
-    let response = reqwest::get(&url)
+    let response = super::http_client()
+        .get(&url)
+        .send()
         .await
         .with_context(|| format!("Failed to fetch SubsPlease RSS feed from {}", url))?;
 

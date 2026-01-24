@@ -22,12 +22,12 @@ struct TorrentInfo {
 }
 
 /// Get the Transmission session ID for RPC calls
-async fn get_session_id() -> Result<(reqwest::Client, String, String)> {
+async fn get_session_id() -> Result<(&'static reqwest::Client, String, String)> {
     let host = std::env::var("TRANSMISSION_HOST").unwrap_or_else(|_| "192.168.86.71".to_string());
     let port = std::env::var("TRANSMISSION_PORT").unwrap_or_else(|_| "9091".to_string());
     let url = format!("http://{}:{}/transmission/rpc", host, port);
 
-    let client = reqwest::Client::new();
+    let client = super::http_client();
     let resp = client.get(&url).send().await?;
     let session_id = resp
         .headers()

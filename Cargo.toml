@@ -31,7 +31,3 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "abort"
-
-[profile.release-pi]
-inherits = "release"
-opt-level = "z"

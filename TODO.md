@@ -6,12 +6,8 @@
 
 - [x] Remove `thirtyfour` (WebDriver/Selenium) dependency
 - [x] Delete `src/scraper/subsplease.rs` (WebDriver-based, replaced by RSS)
-- [x] Delete `src/scraper/raii_process_driver.rs`
 - [x] Reduce tokio features from "full" to specific needed features
 - [x] Add optimized release profile (LTO, strip, codegen-units=1, panic=abort)
-- [x] Add `release-pi` profile with size optimization (opt-level=z)
-- [x] Create `.cargo/config.toml` for aarch64 cross-compilation
-- [x] Create `Dockerfile.pi` for minimal container deployment
 
 ### SubsPlease RSS + Taiga-Style Filter System (Jan 2026)
 
@@ -22,6 +18,21 @@
 - [x] Update `src/scraper/tracker.rs` to use source selection and filter engine
 - [x] Add filter management API endpoints to `src/pages/home.rs`
 - [x] Seed default filters in database initialization
+
+### Docker Memory Optimization (Jan 2026)
+
+- [x] Add shared HTTP client with connection pooling (`src/scraper/mod.rs`)
+- [x] Update `anilist.rs`, `transmission.rs`, `rss.rs` to use shared client
+- [x] Limit Tokio worker threads to 2 in `main.rs`
+- [x] Verified: Container uses ~2 MiB RAM at idle, runs fine with 64MB limit
+
+### Git Branch Merge (Jan 2026)
+
+- [x] Rebase local filter system onto remote match selection workflow
+- [x] Resolve conflicts in main.rs, home.rs, mod.rs (kept both features)
+- [x] Add season_parser and filter_engine to scraper module
+- [x] Remove Pi-specific files (.cargo/config.toml, Dockerfile.pi, release-pi profile)
+- [x] Linear history achieved without merge commits
 
 ## Future Work
 

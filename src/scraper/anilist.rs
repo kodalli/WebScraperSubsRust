@@ -1,4 +1,3 @@
-use reqwest::Client;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_json::json;
 use std::fmt;
@@ -307,7 +306,7 @@ pub enum Season {
 }
 
 pub async fn get_anilist_data(season: Season, year: u16) -> anyhow::Result<Vec<AniShow>> {
-    let client = Client::new();
+    let client = super::http_client();
     // Define query and variables
     let json = json!({"query": SEASONAL, "variables": {"season": season, "seasonYear": year}});
     let resp = client
@@ -325,7 +324,7 @@ pub async fn get_anilist_data(season: Season, year: u16) -> anyhow::Result<Vec<A
 }
 
 pub async fn get_anilist_all_airing() -> anyhow::Result<Vec<AniShow>> {
-    let client = Client::new();
+    let client = super::http_client();
     // Define query and variables
     let json = json!({"query": CURRENTLY_AIRING});
     let resp = client
